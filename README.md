@@ -60,6 +60,24 @@ This project is built with:
 - shadcn-ui
 - Tailwind CSS
 
+## Groq + Puter setup for story generation
+
+1. Copy `.env.example` to `.env`.
+2. Add your Groq key to `VITE_GROQ_API_KEY`.
+3. Keep these model values (or change if needed):
+	- `VITE_GROQ_MODEL_BLUEPRINT=llama-3.3-70b-versatile`
+	- `VITE_GROQ_MODEL_STORY=llama-3.3-70b-versatile`
+4. Run `npm run dev`.
+
+NGO `Generate Story with AI` now runs this pipeline:
+
+1. First Groq call (Llama 3.3 70B) builds strict story blueprint JSON with exact character count.
+2. Second Groq call (Llama 3.3 70B) builds a tree-structured story JSON with 7-10 slides.
+3. `puter.js` generates an image for each slide from the slide image prompt.
+4. Generated story is saved and loaded in the story editor.
+
+Note: this app currently uses client-side API calls for speed of integration. For production, move Groq calls to a backend to keep API keys fully private.
+
 ## How can I deploy this project?
 
 Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
