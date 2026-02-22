@@ -4,10 +4,8 @@ interface ImportMetaEnv {
 	readonly VITE_GROQ_API_KEY: string;
 	readonly VITE_GROQ_MODEL_BLUEPRINT?: string;
 	readonly VITE_GROQ_MODEL_STORY?: string;
-}
-
-interface ImportMeta {
-	readonly env: ImportMetaEnv;
+  readonly VITE_GEMINI_API_KEY: string;
+  readonly VITE_GEMINI_MODEL?: string;
 }
 
 interface PuterAI {

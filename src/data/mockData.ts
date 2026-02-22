@@ -101,39 +101,45 @@ export const mockStories: Story[] = [
 ];
 
 export interface StorySlide {
-  id: number;
+  id: string;
+  slideNumber: number;
   imageDescription: string;
   text: string;
-  choices?: { label: string; nextSlide: number; isCorrect: boolean }[];
+  choices?: { label: string; nextSlide: string; isCorrect: boolean }[];
 }
 
 export const sampleStorySlides: StorySlide[] = [
   {
-    id: 1,
+    id: "1",
+    slideNumber: 1,
     imageDescription: "A sunny playground with children playing happily",
     text: "It was a beautiful afternoon. Rani was playing on the swings at the park near her school. She loved the feeling of the wind in her hair!",
   },
   {
-    id: 2,
+    id: "2",
+    slideNumber: 2,
     imageDescription: "A friendly-looking stranger approaching with candy",
     text: "A man Rani had never seen before walked up to her. \"Hello little girl! Would you like some candy? I have a puppy in my car too!\" he said with a big smile.",
   },
   {
-    id: 3,
+    id: "3",
+    slideNumber: 3,
     imageDescription: "Rani looking thoughtful with two thought bubbles",
     text: "Rani remembered what her teacher had told her about strangers. What should Rani do?",
     choices: [
-      { label: "🙅 Say 'No thank you!' and run to a trusted adult", nextSlide: 4, isCorrect: true },
-      { label: "🍬 Take the candy and go see the puppy", nextSlide: 5, isCorrect: false },
+      { label: "Ask for help from a trusted adult", nextSlide: "4", isCorrect: true },
+      { label: "Go with the person", nextSlide: "5", isCorrect: false },
     ],
   },
   {
-    id: 4,
+    id: "4",
+    slideNumber: 4,
     imageDescription: "Rani running to her teacher, looking brave and confident",
     text: "\"No thank you!\" said Rani firmly. She ran straight to her teacher Mrs. Sharma. \"A stranger offered me candy and wanted me to go with him!\" Rani told her. Mrs. Sharma was so proud of Rani! \"You did exactly the right thing, Rani. You are brave and smart!\" 🌟",
   },
   {
-    id: 5,
+    id: "5",
+    slideNumber: 5,
     imageDescription: "A gentle warning scene with a thought bubble showing the right action",
     text: "Oh no! Going with a stranger is never safe, even if they seem friendly. Remember: strangers can seem nice but have bad intentions. The safe choice is always to say NO and tell a trusted adult right away. Let's see what Rani should have done... 💡",
   },

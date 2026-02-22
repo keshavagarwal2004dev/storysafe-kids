@@ -1,7 +1,9 @@
 import { useState } from "react";
-import { Link, Outlet, useLocation } from "react-router-dom";
-import { LayoutDashboard, BookPlus, Library, BarChart3, Settings, LogOut, Menu, X } from "lucide-react";
+import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { LayoutDashboard, BookPlus, Library, BarChart3, Settings, LogOut, Menu, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
 import logo from "@/assets/safe_story_logo.png";
 
 const navItems = [
@@ -14,7 +16,31 @@ const navItems = [
 
 const NGOLayout = () => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { signOut } = useAuth();
+  const { toast } = useToast();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+
+  const handleSignOut = async () => {
+    setIsSigningOut(true);
+    try {
+      await signOut();
+      toast({
+        title: "Signed out",
+        description: "You have been signed out successfully.",
+      });
+      navigate("/");
+    } catch (error) {
+      toast({
+        title: "Sign out failed",
+        description: error instanceof Error ? error.message : "Failed to sign out",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -56,13 +82,24 @@ const NGOLayout = () => {
         </nav>
 
         <div className="p-3 border-t border-border">
-          <Link
-            to="/"
-            className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+          <Button
+            variant="ghost"
+            className="w-full justify-start text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+            onClick={handleSignOut}
+            disabled={isSigningOut}
           >
-            <LogOut className="h-5 w-5" />
-            Sign Out
-          </Link>
+            {isSigningOut ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Signing out...
+              </>
+            ) : (
+              <>
+                <LogOut className="h-5 w-5" />
+                Sign Out
+              </>
+            )}
+          </Button>
         </div>
       </aside>
 

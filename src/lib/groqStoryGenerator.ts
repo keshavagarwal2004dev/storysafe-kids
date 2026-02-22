@@ -10,14 +10,23 @@ const STORY_MODEL =
   import.meta.env.VITE_GROQ_MODEL_STORY === "llama-3.1-70b-versatile"
     ? "llama-3.3-70b-versatile"
     : import.meta.env.VITE_GROQ_MODEL_STORY || "llama-3.3-70b-versatile";
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+const GEMINI_MODEL = import.meta.env.VITE_GEMINI_MODEL || "gemini-2.0-flash";
+const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 const SAFE_IMAGE_STYLE_SUFFIX =
   "Children's book illustration, warm colors, innocent, safe educational tone, no scary elements, no violence, no nudity, non-threatening.";
+
+export interface CharacterInput {
+  name: string;
+  description: string;
+}
 
 export interface StoryGenerationInput {
   topic: string;
   ageGroup: string;
   language: string;
   characterCount: number;
+  characters?: CharacterInput[];
   regionContext: string;
   description: string;
   moralLesson?: string;
@@ -146,7 +155,7 @@ const normalizeChoices = (choices?: StoryTreeResponse["slides"][number]["choices
 
   return choices.slice(0, 2).map((choice) => ({
     label: choice.label?.trim() || "Continue",
-    nextSlide: Number.isFinite(choice.nextSlide) ? choice.nextSlide : 1,
+    nextSlide: String(Number.isFinite(choice.nextSlide) ? choice.nextSlide : 1),
     isCorrect: !!choice.isCorrect,
   }));
 };
@@ -166,17 +175,19 @@ const normalizeSlides = (slides: StoryTreeResponse["slides"]): GeneratedStorySli
   }
 
   const limited = cleaned.slice(0, 10);
-  const idMap = new Map<number, number>();
+  const idMap = new Map<number, string>();
 
   limited.forEach((slide, index) => {
-    idMap.set(slide.originalId, index + 1);
+    idMap.set(slide.originalId, String(index + 1));
   });
 
   const normalized = limited.map((slide, index) => ({
-    id: index + 1,
+    id: String(index + 1),
+    slideNumber: index + 1,
     text: slide.text,
     imagePrompt: slide.imagePrompt,
     choices: slide.choices,
+    createdAt: new Date().toISOString(),
   }));
 
   const totalSlides = normalized.length;
@@ -196,15 +207,15 @@ const normalizeSlides = (slides: StoryTreeResponse["slides"]): GeneratedStorySli
 
     decisionSlideUsed = true;
 
-    const safeFallback = Math.min(index + 2, totalSlides);
-    const unsafeFallback = Math.min(index + 3, totalSlides);
+    const safeFallback = String(Math.min(index + 2, totalSlides));
+    const unsafeFallback = String(Math.min(index + 3, totalSlides));
 
     const repaired = slide.choices.slice(0, 2).map((choice, choiceIndex) => {
-      const mappedTarget = idMap.get(choice.nextSlide);
+      const mappedTarget = idMap.get(Number(choice.nextSlide));
       const fallbackTarget = choice.isCorrect ? safeFallback : unsafeFallback;
 
       const resolvedTarget =
-        mappedTarget && mappedTarget >= 1 && mappedTarget <= totalSlides && mappedTarget !== slide.id
+        mappedTarget && Number(mappedTarget) >= 1 && Number(mappedTarget) <= totalSlides && mappedTarget !== slide.id
           ? mappedTarget
           : fallbackTarget;
 
@@ -241,36 +252,51 @@ const normalizeSlides = (slides: StoryTreeResponse["slides"]): GeneratedStorySli
   });
 };
 
-const resolvePuterImageResult = async (result: unknown): Promise<string | undefined> => {
-  if (!result) return undefined;
-  if (typeof result === "string") return result;
-
-  if (result instanceof Blob) {
-    return URL.createObjectURL(result);
-  }
-
-  if (typeof result === "object") {
-    const possible = result as {
-      url?: string;
-      src?: string;
-      image?: string;
-      data?: string;
-    };
-
-    return possible.url || possible.src || possible.image || possible.data;
-  }
-
-  return undefined;
-};
-
 export const generateSlideImageWithPuter = async (prompt: string): Promise<string | undefined> => {
-  const puterApi = window.puter?.ai;
-  if (!puterApi?.txt2img) return undefined;
+  if (!GEMINI_API_KEY) {
+    console.warn("[SafeStory] Gemini API key missing; image generation skipped.");
+    return undefined;
+  }
 
   try {
-    const result = await puterApi.txt2img(prompt, { model: "dall-e-3", quality: "hd" });
-    return await resolvePuterImageResult(result);
-  } catch {
+    const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              {
+                text: prompt,
+              },
+            ],
+          },
+        ],
+        generationConfig: {
+          maxOutputTokens: 1024,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error("[SafeStory] Gemini API error:", errorData);
+      return undefined;
+    }
+
+    const data = await response.json();
+    const imageDataUrl = data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+
+    if (!imageDataUrl) {
+      console.warn("[SafeStory] No image data returned from Gemini.");
+      return undefined;
+    }
+
+    return `data:image/jpeg;base64,${imageDataUrl}`;
+  } catch (error) {
+    console.error("[SafeStory] Image generation failed:", error);
     return undefined;
   }
 };
@@ -278,6 +304,10 @@ export const generateSlideImageWithPuter = async (prompt: string): Promise<strin
 const generateBlueprint = async (input: StoryGenerationInput): Promise<StoryBlueprint> => {
   const system =
     "You are a precise JSON generator for child-safe educational story planning under strict POCSO-aligned safeguards. Return valid JSON only, no markdown. Forbid explicit sexual content, nudity, indecent imagery, graphic violence, horror framing, or fear-based narration. Use trauma-informed, positive, age-appropriate language focused on feelings and safety actions.";
+
+  const characterDetails = input.characters && input.characters.length > 0
+    ? `\nCharacter specifications (use these exact details):\n${input.characters.map((c, i) => `${i + 1}. Name: ${c.name}, Description: ${c.description}`).join("\n")}`
+    : "";
 
   const user = `Create a story blueprint JSON for the following NGO request.
 Requirements:
@@ -287,7 +317,7 @@ Requirements:
 - Region/cultural context: ${input.regionContext}
 - Character count: exactly ${input.characterCount}
 - Description: ${input.description}
-- Moral lesson: ${input.moralLesson || "Not provided"}
+- Moral lesson: ${input.moralLesson || "Not provided"}${characterDetails}
 
 Return JSON with exactly this shape:
 {
@@ -422,9 +452,9 @@ export const generateStoryWithGroqAndPuterWithProgress = async (
 
   for (let index = 0; index < slides.length; index += 1) {
     const slide = slides[index];
-      const imageUrl = await generateSlideImageWithPuter(
-        `${slide.imagePrompt}. Modern high-quality children's book illustration, vibrant warm colors, innocent and safe educational tone, 2D vector art style, clean lines, highly detailed, ${SAFE_IMAGE_STYLE_SUFFIX}`,
-      );
+    const imageUrl = await generateSlideImageWithPuter(
+      `${slide.imagePrompt}. Medium quality children's book illustration, warm colors, innocent safe tone, clean 2D style, no scary or violent elements.`
+    );
 
     slidesWithImages.push({
       ...slide,
@@ -445,7 +475,9 @@ export const generateStoryWithGroqAndPuterWithProgress = async (
     total: slides.length,
   });
 
+  const now = new Date().toISOString();
   const generatedStory: GeneratedStory = {
+    id: `story-${Date.now()}`,
     title: blueprint.title,
     topic: input.topic,
     ageGroup: input.ageGroup,
@@ -453,6 +485,16 @@ export const generateStoryWithGroqAndPuterWithProgress = async (
     moralLesson: blueprint.moralLesson || input.moralLesson,
     characters: blueprint.characters,
     slides: slidesWithImages,
+    totalSlides: slidesWithImages.length,
+    status: "draft",
+    createdAt: now,
+    updatedAt: now,
+    metadata: {
+      region: input.regionContext,
+      description: input.description,
+      imageStyle: "gemini-2.0-flash-medium-quality",
+      generationModel: "llama-3.3-70b-versatile",
+    },
   };
 
   report({

@@ -16,10 +16,10 @@ const Landing = () => {
         </div>
         <div className="flex items-center gap-3">
           <Button variant="ghost" asChild>
-            <Link to="/login/ngo">NGO Login</Link>
+            <Link to="/ngo-login">NGO Login</Link>
           </Button>
           <Button variant="default" asChild>
-            <Link to="/login/student">Student Login</Link>
+            <Link to="/student-login">Student Login</Link>
           </Button>
         </div>
       </nav>
@@ -41,13 +41,13 @@ const Landing = () => {
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
               <Button variant="hero" size="xl" asChild>
-                <Link to="/login/ngo">
+                <Link to="/ngo-login">
                   <Shield className="h-5 w-5" />
                   NGO Login
                 </Link>
               </Button>
               <Button variant="heroOutline" size="xl" asChild>
-                <Link to="/login/student">
+                <Link to="/student-login">
                   <BookOpen className="h-5 w-5" />
                   Student Login
                 </Link>

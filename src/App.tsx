@@ -3,6 +3,8 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AuthProvider } from "@/contexts/AuthContext";
+import ProtectedRoute from "@/components/ProtectedRoute";
 import Landing from "./pages/Landing";
 import NGOLogin from "./pages/NGOLogin";
 import StudentLogin from "./pages/StudentLogin";
@@ -24,36 +26,55 @@ const queryClient = new QueryClient();
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <Routes>
-          <Route path="/" element={<Landing />} />
-          <Route path="/login/ngo" element={<NGOLogin />} />
-          <Route path="/login/student" element={<StudentLogin />} />
+      <AuthProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <Routes>
+            <Route path="/" element={<Landing />} />
+            <Route path="/ngo-login" element={<NGOLogin />} />
+            <Route path="/student-login" element={<StudentLogin />} />
+            {/* Legacy routes */}
+            <Route path="/login/ngo" element={<Navigate to="/ngo-login" replace />} />
+            <Route path="/login/student" element={<Navigate to="/student-login" replace />} />
 
-          {/* NGO Portal */}
-          <Route path="/ngo" element={<NGOLayout />}>
-            <Route index element={<Navigate to="dashboard" replace />} />
-            <Route path="dashboard" element={<Dashboard />} />
-            <Route path="create-story" element={<CreateStory />} />
-            <Route path="story-editor" element={<StoryEditor />} />
-            <Route path="my-stories" element={<MyStories />} />
-            <Route path="analytics" element={<Analytics />} />
-            <Route path="settings" element={<SettingsPage />} />
-          </Route>
+            {/* NGO Portal - Protected */}
+            <Route
+              path="/ngo"
+              element={
+                <ProtectedRoute requiredRole="ngo">
+                  <NGOLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<Navigate to="dashboard" replace />} />
+              <Route path="dashboard" element={<Dashboard />} />
+              <Route path="create-story" element={<CreateStory />} />
+              <Route path="story-editor" element={<StoryEditor />} />
+              <Route path="my-stories" element={<MyStories />} />
+              <Route path="analytics" element={<Analytics />} />
+              <Route path="settings" element={<SettingsPage />} />
+            </Route>
 
-          {/* Student Portal */}
-          <Route path="/student" element={<StudentLayout />}>
-            <Route index element={<Navigate to="home" replace />} />
-            <Route path="home" element={<StudentHome />} />
-            <Route path="story/:id" element={<StoryViewer />} />
-            <Route path="reinforcement" element={<ReinforcementScreen />} />
-          </Route>
+            {/* Student Portal - Protected */}
+            <Route
+              path="/student"
+              element={
+                <ProtectedRoute requiredRole="student">
+                  <StudentLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<Navigate to="home" replace />} />
+              <Route path="home" element={<StudentHome />} />
+              <Route path="story/:id" element={<StoryViewer />} />
+              <Route path="reinforcement" element={<ReinforcementScreen />} />
+            </Route>
 
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
     </TooltipProvider>
   </QueryClientProvider>
 );

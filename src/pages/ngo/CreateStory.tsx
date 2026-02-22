@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { CheckCircle2, Loader2, Sparkles } from "lucide-react";
+import { CheckCircle2, Loader2, Sparkles, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,7 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent } from "@/components/ui/card";
 import { topics, ageGroups, languages } from "@/data/mockData";
 import { useToast } from "@/hooks/use-toast";
-import { GenerationProgressEvent, generateStoryWithGroqAndPuter } from "@/lib/groqStoryGenerator";
+import { GenerationProgressEvent, generateStoryWithGroqAndPuter, CharacterInput } from "@/lib/groqStoryGenerator";
+import { useAuth } from "@/contexts/AuthContext";
+import { saveStoryToSupabase } from "@/lib/supabaseStoryService";
 import { saveGeneratedStory } from "@/lib/generatedStoryStorage";
 
 const generationSteps = [
@@ -44,17 +46,36 @@ const getStepIndex = (event: GenerationProgressEvent): number => {
 const CreateStory = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user } = useAuth();
   const [isGenerating, setIsGenerating] = useState(false);
   const [topic, setTopic] = useState("");
   const [ageGroup, setAgeGroup] = useState("");
   const [language, setLanguage] = useState("");
   const [characterCount, setCharacterCount] = useState("2");
+  const [characters, setCharacters] = useState<CharacterInput[]>([
+    { name: "", description: "" },
+    { name: "", description: "" },
+  ]);
   const [regionContext, setRegionContext] = useState("");
   const [description, setDescription] = useState("");
   const [moralLesson, setMoralLesson] = useState("");
   const [activeStep, setActiveStep] = useState(0);
   const [statusMessage, setStatusMessage] = useState("Waiting to start...");
   const [imagesProgress, setImagesProgress] = useState<{ current: number; total: number } | null>(null);
+  const [showCharacters, setShowCharacters] = useState(false);
+
+  // Initialize characters array when characterCount changes
+  useEffect(() => {
+    const count = Number(characterCount);
+    if (count > 0 && count <= 8) {
+      setCharacters(
+        Array.from({ length: count }, (_, i) => ({
+          name: characters[i]?.name || "",
+          description: characters[i]?.description || "",
+        }))
+      );
+    }
+  }, [characterCount]);
 
   const handleProgress = (event: GenerationProgressEvent) => {
     setActiveStep(getStepIndex(event));
@@ -84,6 +105,17 @@ const CreateStory = () => {
       return;
     }
 
+    // Validate characters
+    const filledCharacters = characters.filter((c) => c.name.trim() || c.description.trim());
+    if (filledCharacters.length > 0 && filledCharacters.length !== Number(characterCount)) {
+      toast({
+        title: "Incomplete character details",
+        description: `Please fill all ${characterCount} character names and descriptions, or leave them empty.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsGenerating(true);
     setActiveStep(0);
     setStatusMessage("Starting generation...");
@@ -96,12 +128,37 @@ const CreateStory = () => {
         ageGroup,
         language,
         characterCount: Number(characterCount),
+        characters: filledCharacters.length > 0 ? characters : undefined,
         regionContext,
         description,
         moralLesson,
       }, { onProgress: handleProgress });
 
+      // Save to localStorage for editor to access
       saveGeneratedStory(generated);
+
+      // Save to Supabase
+      if (user) {
+        const supabaseStory = await saveStoryToSupabase(
+          user.id,
+          {
+            ...generated,
+            topic,
+            ageGroup,
+            language,
+            characterCount: Number(characterCount),
+            regionContext,
+            description,
+            moralLesson,
+          },
+          "draft"
+        );
+        
+        // Store the Supabase story ID for the editor
+        localStorage.setItem("current_story_id", supabaseStory.id);
+        console.info("[SafeStory][NGO] Story saved to Supabase:", supabaseStory.id);
+      }
+
       console.info("[SafeStory][NGO] Generation completed and story saved for editor.", {
         slides: generated.slides.length,
         title: generated.title,
@@ -229,6 +286,70 @@ const CreateStory = () => {
                   onChange={(e) => setCharacterCount(e.target.value)}
                 />
               </div>
+            </div>
+
+            {/* Character Details Section */}
+            <div className="border border-border rounded-xl p-4 bg-card/50">
+              <button
+                type="button"
+                onClick={() => setShowCharacters(!showCharacters)}
+                className="w-full flex items-center justify-between text-sm font-medium hover:bg-card/80 p-2 -mx-2 -my-2 px-2 py-2 rounded-lg transition"
+              >
+                <span>Character Details (Optional)</span>
+                <ChevronDown
+                  className={`h-4 w-4 transition-transform ${showCharacters ? "rotate-180" : ""}`}
+                />
+              </button>
+
+              {showCharacters && (
+                <div className="mt-4 space-y-4">
+                  {characters.map((character, index) => (
+                    <div
+                      key={index}
+                      className="p-4 bg-background rounded-lg border border-border/50 space-y-3"
+                    >
+                      <h4 className="font-medium text-foreground">Character {index + 1}</h4>
+                      <div className="space-y-2">
+                        <Label htmlFor={`char-name-${index}`} className="text-xs">
+                          Name
+                        </Label>
+                        <Input
+                          id={`char-name-${index}`}
+                          type="text"
+                          placeholder="e.g. Rani, Mrs. Sharma, the Teacher"
+                          className="rounded-lg"
+                          value={character.name}
+                          onChange={(e) => {
+                            const newCharacters = [...characters];
+                            newCharacters[index].name = e.target.value;
+                            setCharacters(newCharacters);
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor={`char-desc-${index}`} className="text-xs">
+                          Description
+                        </Label>
+                        <Textarea
+                          id={`char-desc-${index}`}
+                          placeholder="e.g. 7-year-old girl from Mumbai, brave and curious about the world"
+                          rows={2}
+                          className="rounded-lg resize-none"
+                          value={character.description}
+                          onChange={(e) => {
+                            const newCharacters = [...characters];
+                            newCharacters[index].description = e.target.value;
+                            setCharacters(newCharacters);
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  <p className="text-xs text-muted-foreground">
+                    Fill in character names and descriptions to make the story more personalized. Leave empty for generic character generation.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">
