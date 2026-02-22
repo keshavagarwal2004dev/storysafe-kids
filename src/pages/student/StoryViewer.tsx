@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Volume2, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { sampleStorySlides } from "@/data/mockData";
+import { loadGeneratedStory } from "@/lib/generatedStoryStorage";
 
 const bgGradients = [
   "from-primary/5 to-secondary/5",
@@ -19,6 +20,17 @@ const StoryViewer = () => {
   const [transitioning, setTransitioning] = useState(false);
   const navigate = useNavigate();
   const slide = sampleStorySlides[currentSlide];
+  const generatedStory = loadGeneratedStory();
+
+  const goToOutcome = (isCorrect: boolean) => {
+    navigate("/student/reinforcement", {
+      state: {
+        outcome: isCorrect ? "positive" : "educational",
+        storyTitle: generatedStory?.title || "Rani and the Playground",
+        moralLesson: generatedStory?.moralLesson,
+      },
+    });
+  };
 
   const goToSlide = (index: number) => {
     setTransitioning(true);
@@ -33,7 +45,8 @@ const StoryViewer = () => {
   };
 
   const handleChoice = (nextSlide: number) => {
-    goToSlide(nextSlide >= sampleStorySlides.length ? sampleStorySlides.length : nextSlide - 1);
+    const selected = slide.choices?.find((choice) => choice.nextSlide === nextSlide);
+    goToOutcome(!!selected?.isCorrect);
   };
 
   return (

@@ -10,6 +10,8 @@ const STORY_MODEL =
   import.meta.env.VITE_GROQ_MODEL_STORY === "llama-3.1-70b-versatile"
     ? "llama-3.3-70b-versatile"
     : import.meta.env.VITE_GROQ_MODEL_STORY || "llama-3.3-70b-versatile";
+const SAFE_IMAGE_STYLE_SUFFIX =
+  "Children's book illustration, warm colors, innocent, safe educational tone, no scary elements, no violence, no nudity, non-threatening.";
 
 export interface StoryGenerationInput {
   topic: string;
@@ -143,7 +145,7 @@ const normalizeChoices = (choices?: StoryTreeResponse["slides"][number]["choices
   if (!choices || choices.length === 0) return undefined;
 
   return choices.slice(0, 2).map((choice) => ({
-    label: choice.label,
+    label: choice.label?.trim() || "Continue",
     nextSlide: Number.isFinite(choice.nextSlide) ? choice.nextSlide : 1,
     isCorrect: !!choice.isCorrect,
   }));
@@ -152,7 +154,7 @@ const normalizeChoices = (choices?: StoryTreeResponse["slides"][number]["choices
 const normalizeSlides = (slides: StoryTreeResponse["slides"]): GeneratedStorySlide[] => {
   const cleaned = slides
     .map((slide, index) => ({
-      id: Number.isFinite(slide.id) ? slide.id : index + 1,
+      originalId: Number.isFinite(slide.id) ? slide.id : index + 1,
       text: slide.text?.trim(),
       imagePrompt: slide.imagePrompt?.trim(),
       choices: normalizeChoices(slide.choices),
@@ -163,15 +165,80 @@ const normalizeSlides = (slides: StoryTreeResponse["slides"]): GeneratedStorySli
     throw new Error("Model returned fewer than 7 slides. Please try generating again.");
   }
 
-  return cleaned.slice(0, 10).map((slide, index) => ({
-    ...slide,
+  const limited = cleaned.slice(0, 10);
+  const idMap = new Map<number, number>();
+
+  limited.forEach((slide, index) => {
+    idMap.set(slide.originalId, index + 1);
+  });
+
+  const normalized = limited.map((slide, index) => ({
     id: index + 1,
-    choices:
-      slide.choices?.map((choice) => ({
-        ...choice,
-        nextSlide: Math.min(Math.max(choice.nextSlide, index + 1), Math.min(cleaned.length, 10)),
-      })) ?? undefined,
+    text: slide.text,
+    imagePrompt: slide.imagePrompt,
+    choices: slide.choices,
   }));
+
+  const totalSlides = normalized.length;
+  let decisionSlideUsed = false;
+
+  return normalized.map((slide, index) => {
+    if (!slide.choices || slide.choices.length === 0) {
+      return slide;
+    }
+
+    if (decisionSlideUsed) {
+      return {
+        ...slide,
+        choices: undefined,
+      };
+    }
+
+    decisionSlideUsed = true;
+
+    const safeFallback = Math.min(index + 2, totalSlides);
+    const unsafeFallback = Math.min(index + 3, totalSlides);
+
+    const repaired = slide.choices.slice(0, 2).map((choice, choiceIndex) => {
+      const mappedTarget = idMap.get(choice.nextSlide);
+      const fallbackTarget = choice.isCorrect ? safeFallback : unsafeFallback;
+
+      const resolvedTarget =
+        mappedTarget && mappedTarget >= 1 && mappedTarget <= totalSlides && mappedTarget !== slide.id
+          ? mappedTarget
+          : fallbackTarget;
+
+      const defaultLabel = choice.isCorrect
+        ? "Ask for help from a trusted adult"
+        : "Go with the person";
+
+      return {
+        label: choice.label?.trim() || defaultLabel,
+        nextSlide: resolvedTarget,
+        isCorrect: typeof choice.isCorrect === "boolean" ? choice.isCorrect : choiceIndex === 0,
+      };
+    });
+
+    if (repaired.length === 1) {
+      repaired.push({
+        label: "Try the other option",
+        nextSlide: unsafeFallback,
+        isCorrect: false,
+      });
+    }
+
+    if (repaired.length === 2 && repaired[0].isCorrect === repaired[1].isCorrect) {
+      repaired[1] = {
+        ...repaired[1],
+        isCorrect: !repaired[0].isCorrect,
+      };
+    }
+
+    return {
+      ...slide,
+      choices: repaired,
+    };
+  });
 };
 
 const resolvePuterImageResult = async (result: unknown): Promise<string | undefined> => {
@@ -201,7 +268,7 @@ export const generateSlideImageWithPuter = async (prompt: string): Promise<strin
   if (!puterApi?.txt2img) return undefined;
 
   try {
-    const result = await puterApi.txt2img(prompt);
+    const result = await puterApi.txt2img(prompt, { model: "dall-e-3", quality: "hd" });
     return await resolvePuterImageResult(result);
   } catch {
     return undefined;
@@ -210,7 +277,7 @@ export const generateSlideImageWithPuter = async (prompt: string): Promise<strin
 
 const generateBlueprint = async (input: StoryGenerationInput): Promise<StoryBlueprint> => {
   const system =
-    "You are a precise JSON generator for child-safe educational story planning. Return valid JSON only, no markdown.";
+    "You are a precise JSON generator for child-safe educational story planning under strict POCSO-aligned safeguards. Return valid JSON only, no markdown. Forbid explicit sexual content, nudity, indecent imagery, graphic violence, horror framing, or fear-based narration. Use trauma-informed, positive, age-appropriate language focused on feelings and safety actions.";
 
   const user = `Create a story blueprint JSON for the following NGO request.
 Requirements:
@@ -253,16 +320,32 @@ const generateStoryTree = async (
   blueprint: StoryBlueprint,
 ): Promise<GeneratedStorySlide[]> => {
   const system =
-    "You are a storytelling engine for safety education. Return valid JSON only with no markdown, no explanations.";
+    "You are a storytelling engine for child safety education under strict POCSO-aligned constraints. Return valid JSON only with no markdown and no explanations. Never include explicit sexual content, nudity, indecent images, body-part explicitness, graphic violence, or horror elements. Use trauma-informed positive framing and age-appropriate language focused on feelings and protective actions (example tone: 'this feels wrong' and 'go to a trusted adult').";
 
   const user = `Using this blueprint JSON:\n${JSON.stringify(blueprint, null, 2)}\n\nGenerate a branching story JSON in ${input.language}.
-Rules:
-- Story must contain between 7 and 10 slides
-- Use a tree-like structure using choices on at least 3 slides
-- Each slide must include text and imagePrompt
-- Keep language age-appropriate for ${input.ageGroup}
-- Keep child safety framing trauma-informed and practical
-- Include both right and wrong choices where relevant
+STRICT LEGAL + SAFETY RULES (MANDATORY):
+- Must be POCSO-safe and child-protective.
+- Absolutely no explicit sexual content, nudity, indecent imagery, or graphic violence.
+- No horror tone, no threats, no frightening visual narration.
+- Use trauma-informed, positive framing.
+- Use highly age-appropriate wording for ${input.ageGroup}, centered on feelings and safe actions.
+
+PEDAGOGICAL STRUCTURE (MANDATORY):
+- Story length must be 7 to 10 slides total.
+- Setup slides first: introduce child character, trusted context, and normal safe environment.
+- Include exactly ONE Decision Slide in the whole story with exactly 2 choices:
+  1) one Safe choice (isCorrect: true)
+  2) one Unsafe choice (isCorrect: false)
+- Choice button labels must be neutral and natural. Do NOT reveal which choice is right or wrong in the button label.
+- Safe branch must go to a slide that praises the child, reinforces the safety rule, and ends with a happy reassuring conclusion.
+- Unsafe branch must go to a slide that gently corrects the action immediately, then shows trusted adult intervention, and ends with comfort and safety.
+
+JSON + POINTER RULES (MANDATORY):
+- Every slide must contain integer id, text, imagePrompt.
+- id values must be unique integers and match slide order in the array.
+- Every nextSlide must be an integer that exactly matches an existing slide id in this same array.
+- Do not output missing references, invalid ids, strings, or null ids.
+- Decision slide must contain exactly 2 choices; non-decision slides should omit choices.
 
 Return JSON shape:
 {
@@ -339,9 +422,9 @@ export const generateStoryWithGroqAndPuterWithProgress = async (
 
   for (let index = 0; index < slides.length; index += 1) {
     const slide = slides[index];
-    const imageUrl = await generateSlideImageWithPuter(
-      `${slide.imagePrompt}. Children's book style, warm colors, safe educational tone.`,
-    );
+      const imageUrl = await generateSlideImageWithPuter(
+        `${slide.imagePrompt}. Modern high-quality children's book illustration, vibrant warm colors, innocent and safe educational tone, 2D vector art style, clean lines, highly detailed, ${SAFE_IMAGE_STYLE_SUFFIX}`,
+      );
 
     slidesWithImages.push({
       ...slide,

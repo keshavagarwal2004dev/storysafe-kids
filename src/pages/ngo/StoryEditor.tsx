@@ -48,7 +48,7 @@ const StoryEditor = () => {
 
     setIsRegeneratingImage(true);
     const imageUrl = await generateSlideImageWithPuter(
-      `${slide.imagePrompt}. Children's storybook illustration, warm and safe educational style.`,
+      `${slide.imagePrompt}. Children's book illustration, warm colors, innocent, safe educational tone, no scary elements, no violence, no nudity, non-threatening.`,
     );
 
     if (!imageUrl) {
