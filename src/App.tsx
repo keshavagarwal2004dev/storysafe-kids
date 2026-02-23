@@ -64,9 +64,18 @@ const App = () => (
             >
               <Route index element={<Navigate to="home" replace />} />
               <Route path="home" element={<StudentHome />} />
-              <Route path="story/:id" element={<StoryViewer />} />
               <Route path="reinforcement" element={<ReinforcementScreen />} />
             </Route>
+
+            {/* Shared Story Viewer - Accessible to both NGO and Student for preview/reading */}
+            <Route
+              path="/story/:id"
+              element={
+                <ProtectedRoute>
+                  <StoryViewer />
+                </ProtectedRoute>
+              }
+            />
 
             <Route path="*" element={<NotFound />} />
           </Routes>

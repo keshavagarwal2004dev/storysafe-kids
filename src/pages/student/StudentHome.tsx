@@ -87,7 +87,7 @@ const StudentHome = () => {
               <p className="text-sm text-muted-foreground">{continueStory.topic} · {continueStory.age_group || "All ages"}</p>
             </div>
             <Button asChild>
-              <Link to={`/student/story/${continueStory.id}`}>
+              <Link to={`/story/${continueStory.id}`}>
                 Continue <ArrowRight className="h-4 w-4" />
               </Link>
             </Button>
@@ -147,7 +147,7 @@ const StudentHome = () => {
       ) : (
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((story) => (
-            <Link key={story.id} to={`/student/story/${story.id}`}>
+            <Link key={story.id} to={`/story/${story.id}`}>
               <Card className="border-0 shadow-card overflow-hidden group hover:shadow-soft transition-all hover:-translate-y-1 cursor-pointer">
                 <div className="h-36 flex items-center justify-center text-5xl bg-gradient-warm">
                   📚

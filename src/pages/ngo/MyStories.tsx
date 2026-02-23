@@ -150,7 +150,7 @@ const MyStories = () => {
                     <Link to={`/ngo/story-editor/${story.id}`}><Pencil className="h-3 w-3" /> Edit</Link>
                   </Button>
                   <Button variant="outline" size="sm" asChild className="flex-1">
-                    <Link to={`/student/story/${story.id}`}><Eye className="h-3 w-3" /> Preview</Link>
+                    <Link to={`/story/${story.id}`}><Eye className="h-3 w-3" /> Preview</Link>
                   </Button>
                   <Button variant="ghost" size="icon" className="shrink-0" onClick={() => duplicateStory(story.id)}>
                     <Copy className="h-3 w-3" />
