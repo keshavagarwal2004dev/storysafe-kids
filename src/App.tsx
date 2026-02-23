@@ -50,7 +50,7 @@ const App = () => (
               <Route index element={<Navigate to="dashboard" replace />} />
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="create-story" element={<CreateStory />} />
-              <Route path="story-editor" element={<StoryEditor />} />
+              <Route path="story-editor/:id" element={<StoryEditor />} />
               <Route path="my-stories" element={<MyStories />} />
               <Route path="analytics" element={<Analytics />} />
               <Route path="settings" element={<SettingsPage />} />

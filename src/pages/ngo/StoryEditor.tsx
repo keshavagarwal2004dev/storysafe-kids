@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { ChevronLeft, ChevronRight, Pencil, RefreshCw, Check, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -9,8 +9,11 @@ import { useToast } from "@/hooks/use-toast";
 import { GeneratedStorySlide, loadGeneratedStory } from "@/lib/generatedStoryStorage";
 import { generateSlideImageWithPuter } from "@/lib/groqStoryGenerator";
 import { StoryTreeVisualizer } from "@/components/StoryTreeVisualizer";
+import { getStoryById, updateStoryStatus } from "@/lib/supabaseStoryService";
+import { supabase } from "@/lib/supabaseClient";
 
 const StoryEditor = () => {
+  const { id } = useParams<{ id: string }>();
   const [currentSlide, setCurrentSlide] = useState(0);
   const [editing, setEditing] = useState(false);
   const [storyTitle, setStoryTitle] = useState("Story Preview Editor");
@@ -26,6 +29,8 @@ const StoryEditor = () => {
   );
   const [editText, setEditText] = useState("");
   const [isRegeneratingImage, setIsRegeneratingImage] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [storyData, setStoryData] = useState<any>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
   const slide = slides[currentSlide];
@@ -75,30 +80,115 @@ const StoryEditor = () => {
   };
 
   useEffect(() => {
-    const generatedStory = loadGeneratedStory();
-    if (!generatedStory) return;
+    const loadStory = async () => {
+      if (!id) {
+        // If no ID, try to load from localStorage (legacy behavior)
+        const generatedStory = loadGeneratedStory();
+        if (generatedStory) {
+          setStoryTitle(generatedStory.title || "Story Preview Editor");
+          setSlides(generatedStory.slides);
+          setCurrentSlide(0);
+        }
+        return;
+      }
 
-    setStoryTitle(generatedStory.title || "Story Preview Editor");
-    setSlides(generatedStory.slides);
-    setCurrentSlide(0);
-  }, []);
+      // Load from Supabase
+      setLoading(true);
+      const story = await getStoryById(id);
+      if (!story) {
+        toast({
+          title: "Story not found",
+          description: "The story you're looking for doesn't exist.",
+          variant: "destructive",
+        });
+        navigate("/ngo/my-stories");
+        return;
+      }
+
+      setStoryData(story);
+      setStoryTitle(story.title || "Story Preview Editor");
+      
+      // Load slides from story_data
+      if (story.story_data?.slides) {
+        setSlides(story.story_data.slides);
+      }
+      
+      setCurrentSlide(0);
+      setLoading(false);
+    };
+    
+    loadStory();
+  }, [id, navigate, toast]);
+
+  const handleSaveDraft = async () => {
+    if (!id || !storyData) {
+      toast({ title: "Draft saved to local storage!" });
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("stories")
+        .update({
+          story_data: { ...storyData.story_data, slides },
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id);
+
+      if (error) throw error;
+      
+      toast({ title: "Draft saved!" });
+    } catch (error) {
+      toast({
+        title: "Failed to save draft",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleApprove = async () => {
+    if (!id) {
+      toast({ title: "Story approved!" });
+      navigate("/ngo/my-stories");
+      return;
+    }
+
+    try {
+      await updateStoryStatus(id, "published");
+      toast({ title: "Story published!" });
+      navigate("/ngo/my-stories");
+    } catch (error) {
+      toast({
+        title: "Failed to publish story",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">{storyTitle}</h1>
-          <p className="text-muted-foreground">Review and edit the AI-generated story</p>
+      {loading ? (
+        <div className="text-center py-16">
+          <p className="text-muted-foreground">Loading story...</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => { toast({ title: "Draft saved!" }); }}>
-            <Save className="h-4 w-4" /> Save Draft
-          </Button>
-          <Button onClick={() => { toast({ title: "Story approved!" }); navigate("/ngo/my-stories"); }}>
-            <Check className="h-4 w-4" /> Approve
-          </Button>
-        </div>
-      </div>
+      ) : (
+        <>
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-2xl font-bold text-foreground">{storyTitle}</h1>
+              <p className="text-muted-foreground">Review and edit the AI-generated story</p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={handleSaveDraft}>
+                <Save className="h-4 w-4" /> Save Draft
+              </Button>
+              <Button onClick={handleApprove}>
+                <Check className="h-4 w-4" /> Approve
+              </Button>
+            </div>
+          </div>
 
       {/* Two-column layout: Tree on left, Slide preview on right */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -202,6 +292,8 @@ const StoryEditor = () => {
           </Card>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 };

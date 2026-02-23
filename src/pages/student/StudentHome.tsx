@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Search, Filter, ArrowRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -6,17 +6,47 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { studentStories, topics, ageGroups } from "@/data/mockData";
+import { getPublishedStories } from "@/lib/supabaseStoryService";
+
+interface Story {
+  id: string;
+  title: string;
+  topic?: string;
+  age_group?: string;
+  language?: string;
+  status: string;
+  created_at: string;
+}
 
 const StudentHome = () => {
+  const [stories, setStories] = useState<Story[]>([]);
+  const [loading, setLoading] = useState(true);
   const [topicFilter, setTopicFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
 
-  const filtered = studentStories.filter((s) => {
+  useEffect(() => {
+    const loadStories = async () => {
+      setLoading(true);
+      const data = await getPublishedStories();
+      setStories(data || []);
+      setLoading(false);
+    };
+    loadStories();
+  }, []);
+
+  // Extract unique topics from stories
+  const topics = Array.from(new Set(stories.map(s => s.topic).filter(Boolean))) as string[];
+
+  const filtered = stories.filter((s) => {
     if (topicFilter !== "all" && s.topic !== topicFilter) return false;
     if (search && !s.title.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
+
+  const getRandomColor = () => {
+    const colors = ["#FF6B6B", "#4ECDC4", "#FFE66D", "#95E1D3", "#F38181"];
+    return colors[Math.floor(Math.random() * colors.length)];
+  };
 
   return (
     <div className="p-4 md:p-8 max-w-6xl mx-auto">
@@ -29,21 +59,23 @@ const StudentHome = () => {
       </div>
 
       {/* Continue Last Story */}
-      <Card className="border-0 shadow-soft bg-gradient-hero mb-8 overflow-hidden">
-        <CardContent className="p-6 flex flex-col sm:flex-row items-center gap-4">
-          <div className="text-5xl">📖</div>
-          <div className="flex-1 text-center sm:text-left">
-            <p className="text-xs font-medium text-primary mb-1">Continue where you left off</p>
-            <h3 className="text-lg font-bold text-foreground">Rani and the Playground</h3>
-            <p className="text-sm text-muted-foreground">Slide 3 of 5 · Stranger Danger</p>
-          </div>
-          <Button asChild>
-            <Link to="/student/story/1">
-              Continue <ArrowRight className="h-4 w-4" />
-            </Link>
-          </Button>
-        </CardContent>
-      </Card>
+      {filtered.length > 0 && (
+        <Card className="border-0 shadow-soft bg-gradient-hero mb-8 overflow-hidden">
+          <CardContent className="p-6 flex flex-col sm:flex-row items-center gap-4">
+            <div className="text-5xl">📖</div>
+            <div className="flex-1 text-center sm:text-left">
+              <p className="text-xs font-medium text-primary mb-1">Start your journey</p>
+              <h3 className="text-lg font-bold text-foreground">{filtered[0].title}</h3>
+              <p className="text-sm text-muted-foreground">{filtered[0].topic} · {filtered[0].age_group || "All ages"}</p>
+            </div>
+            <Button asChild>
+              <Link to={`/student/story/${filtered[0].id}`}>
+                Start <ArrowRight className="h-4 w-4" />
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
@@ -69,11 +101,19 @@ const StudentHome = () => {
       </div>
 
       {/* Story Grid */}
-      {filtered.length === 0 ? (
+      {loading ? (
+        <div className="text-center py-16">
+          <p className="text-muted-foreground">Loading stories...</p>
+        </div>
+      ) : filtered.length === 0 ? (
         <div className="text-center py-16">
           <div className="text-5xl mb-4">🔍</div>
           <h3 className="text-lg font-semibold text-foreground mb-2">No stories found</h3>
-          <p className="text-muted-foreground">Try adjusting your filters</p>
+          <p className="text-muted-foreground">
+            {stories.length === 0 
+              ? "No stories have been published yet. Check back soon!"
+              : "Try adjusting your filters"}
+          </p>
         </div>
       ) : (
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -82,14 +122,14 @@ const StudentHome = () => {
               <Card className="border-0 shadow-card overflow-hidden group hover:shadow-soft transition-all hover:-translate-y-1 cursor-pointer">
                 <div
                   className="h-36 flex items-center justify-center text-5xl"
-                  style={{ background: `${story.coverColor}15` }}
+                  style={{ background: `${getRandomColor()}15` }}
                 >
                   📚
                 </div>
                 <CardContent className="p-5">
-                  <Badge className="rounded-full text-xs mb-2">{story.topic}</Badge>
+                  <Badge className="rounded-full text-xs mb-2">{story.topic || "General"}</Badge>
                   <h3 className="font-bold text-foreground mb-1">{story.title}</h3>
-                  <p className="text-xs text-muted-foreground">{story.ageGroup} · {story.language}</p>
+                  <p className="text-xs text-muted-foreground">{story.age_group || "All ages"} · {story.language || "English"}</p>
                 </CardContent>
               </Card>
             </Link>

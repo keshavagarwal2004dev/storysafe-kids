@@ -1,18 +1,51 @@
 import { Link } from "react-router-dom";
+import { useState, useEffect } from "react";
 import { BookPlus, Users, BookOpen, TrendingUp, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { dashboardStats, mockStories } from "@/data/mockData";
 import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/contexts/AuthContext";
+import { getUserStories } from "@/lib/supabaseStoryService";
 
-const statCards = [
-  { label: "Stories Created", value: dashboardStats.storiesCreated, icon: BookOpen, color: "text-primary" },
-  { label: "Students Reached", value: dashboardStats.studentsReached.toLocaleString(), icon: Users, color: "text-secondary" },
-  { label: "Completion Rate", value: `${dashboardStats.completionRate}%`, icon: TrendingUp, color: "text-accent" },
-  { label: "Active Stories", value: dashboardStats.activeStories, icon: BarChart3, color: "text-primary" },
-];
+interface Story {
+  id: string;
+  title: string;
+  topic?: string;
+  status: string;
+  age_group?: string;
+  created_at: string;
+}
 
 const Dashboard = () => {
+  const { user } = useAuth();
+  const [stories, setStories] = useState<Story[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadStories = async () => {
+      if (!user?.id) return;
+      setLoading(true);
+      const data = await getUserStories(user.id);
+      setStories(data || []);
+      setLoading(false);
+    };
+    loadStories();
+  }, [user]);
+
+  const storiesCreated = stories.length;
+  const activeStories = stories.filter(s => s.status === "published").length;
+  const studentsReached = activeStories * 12; // Placeholder calculation
+  const completionRate = activeStories > 0 ? Math.round((activeStories / storiesCreated) * 100) : 0;
+
+  const statCards = [
+    { label: "Stories Created", value: storiesCreated, icon: BookOpen, color: "text-primary" },
+    { label: "Students Reached", value: studentsReached.toLocaleString(), icon: Users, color: "text-secondary" },
+    { label: "Completion Rate", value: `${completionRate}%`, icon: TrendingUp, color: "text-accent" },
+    { label: "Active Stories", value: activeStories, icon: BarChart3, color: "text-primary" },
+  ];
+
+  const recentStories = stories.slice(0, 5);
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -52,34 +85,46 @@ const Dashboard = () => {
           </Button>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left">
-                  <th className="pb-3 font-medium text-muted-foreground">Title</th>
-                  <th className="pb-3 font-medium text-muted-foreground hidden sm:table-cell">Topic</th>
-                  <th className="pb-3 font-medium text-muted-foreground hidden md:table-cell">Age Group</th>
-                  <th className="pb-3 font-medium text-muted-foreground">Status</th>
-                  <th className="pb-3 font-medium text-muted-foreground text-right">Students</th>
-                </tr>
-              </thead>
-              <tbody>
-                {mockStories.slice(0, 5).map((story) => (
-                  <tr key={story.id} className="border-b border-border/50 last:border-0">
-                    <td className="py-3 font-medium text-foreground">{story.title}</td>
-                    <td className="py-3 text-muted-foreground hidden sm:table-cell">{story.topic}</td>
-                    <td className="py-3 text-muted-foreground hidden md:table-cell">{story.ageGroup}</td>
-                    <td className="py-3">
-                      <Badge variant={story.status === "published" ? "default" : "secondary"} className="rounded-full text-xs">
-                        {story.status}
-                      </Badge>
-                    </td>
-                    <td className="py-3 text-right text-muted-foreground">{story.studentsReached}</td>
+          {loading ? (
+            <p className="text-center text-muted-foreground py-4">Loading...</p>
+          ) : recentStories.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground mb-4">No stories yet. Create your first one!</p>
+              <Button asChild>
+                <Link to="/ngo/create-story">
+                  <BookPlus className="h-4 w-4" />
+                  Create Story
+                </Link>
+              </Button>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left">
+                    <th className="pb-3 font-medium text-muted-foreground">Title</th>
+                    <th className="pb-3 font-medium text-muted-foreground hidden sm:table-cell">Topic</th>
+                    <th className="pb-3 font-medium text-muted-foreground hidden md:table-cell">Age Group</th>
+                    <th className="pb-3 font-medium text-muted-foreground">Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {recentStories.map((story) => (
+                    <tr key={story.id} className="border-b border-border/50 last:border-0">
+                      <td className="py-3 font-medium text-foreground">{story.title}</td>
+                      <td className="py-3 text-muted-foreground hidden sm:table-cell">{story.topic || "N/A"}</td>
+                      <td className="py-3 text-muted-foreground hidden md:table-cell">{story.age_group || "N/A"}</td>
+                      <td className="py-3">
+                        <Badge variant={story.status === "published" ? "default" : "secondary"} className="rounded-full text-xs">
+                          {story.status}
+                        </Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

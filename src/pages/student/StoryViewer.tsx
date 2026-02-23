@@ -1,11 +1,13 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { Volume2, ArrowLeft, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { sampleStorySlides } from "@/data/mockData";
 import { loadGeneratedStory } from "@/lib/generatedStoryStorage";
+import { getStoryById } from "@/lib/supabaseStoryService";
+import { useToast } from "@/hooks/use-toast";
 
 const bgGradients = [
   "from-primary/5 to-secondary/5",
@@ -18,14 +20,56 @@ const bgGradients = [
 const emojis = ["🏞️", "🍬", "🤔", "🌟", "💡"];
 
 const StoryViewer = () => {
+  const { id } = useParams<{ id: string }>();
   const [currentSlideId, setCurrentSlideId] = useState("1");
   const [transitioning, setTransitioning] = useState(false);
   const [showLearningCard, setShowLearningCard] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [storyData, setStoryData] = useState<any>(null);
   const navigate = useNavigate();
-  const generatedStory = loadGeneratedStory();
+  const { toast } = useToast();
+  
+  const generatedStory = storyData || loadGeneratedStory();
   const allSlides = generatedStory?.slides || sampleStorySlides;
-  const currentSlideIndex = allSlides.findIndex((s) => s.id === currentSlideId);
+  const currentSlideIndex = allSlides.findIndex((s: any) => s.id === currentSlideId);
   const slide = currentSlideIndex >= 0 ? allSlides[currentSlideIndex] : allSlides[0];
+
+  useEffect(() => {
+    const loadStory = async () => {
+      if (!id) {
+        // If no ID, try to load from localStorage (legacy behavior)
+        const localStory = loadGeneratedStory();
+        if (localStory) {
+          setStoryData(localStory);
+        }
+        return;
+      }
+
+      // Load from Supabase
+      setLoading(true);
+      const story = await getStoryById(id);
+      if (!story) {
+        toast({
+          title: "Story not found",
+          description: "The story you're looking for doesn't exist.",
+          variant: "destructive",
+        });
+        navigate("/student/home");
+        return;
+      }
+
+      // Set story data from story_data field
+      setStoryData({
+        title: story.title,
+        slides: story.story_data?.slides || [],
+        moralLesson: story.story_data?.moralLesson,
+      });
+      
+      setLoading(false);
+    };
+    
+    loadStory();
+  }, [id, navigate, toast]);
 
   const goToOutcome = (isCorrect: boolean) => {
     navigate("/student/reinforcement", {
@@ -75,34 +119,40 @@ const StoryViewer = () => {
 
   return (
     <div className={`min-h-[calc(100vh-60px)] flex flex-col bg-gradient-to-b ${bgGradients[currentSlideIndex % bgGradients.length]}`}>
-      {/* Top bar */}
-      <div className="flex items-center justify-between p-4">
-        <Button variant="ghost" size="sm" onClick={() => navigate("/student/home")}>
-          <ArrowLeft className="h-4 w-4" /> Back
-        </Button>
-        <Button variant="ghost" size="icon">
-          <Volume2 className="h-5 w-5" />
-        </Button>
-      </div>
+      {loading ? (
+        <div className="flex-1 flex items-center justify-center">
+          <p className="text-muted-foreground">Loading story...</p>
+        </div>
+      ) : (
+        <>
+          {/* Top bar */}
+          <div className="flex items-center justify-between p-4">
+            <Button variant="ghost" size="sm" onClick={() => navigate("/student/home")}>
+              <ArrowLeft className="h-4 w-4" /> Back
+            </Button>
+            <Button variant="ghost" size="icon">
+              <Volume2 className="h-5 w-5" />
+            </Button>
+          </div>
 
-      {/* Progress */}
-      <div className="flex gap-1.5 px-6">
-        {allSlides.map((_, i) => (
+          {/* Progress */}
+          <div className="flex gap-1.5 px-6">
+            {allSlides.map((_: any, i: number) => (
+              <div
+                key={i}
+                className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${
+                  i <= currentSlideIndex ? "bg-primary" : "bg-muted"
+                }`}
+              />
+            ))}
+          </div>
+
+          {/* Content */}
           <div
-            key={i}
-            className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${
-              i <= currentSlideIndex ? "bg-primary" : "bg-muted"
+            className={`flex-1 flex flex-col items-center justify-center p-6 md:p-12 text-center transition-opacity duration-300 ${
+              transitioning ? "opacity-0" : "opacity-100"
             }`}
-          />
-        ))}
-      </div>
-
-      {/* Content */}
-      <div
-        className={`flex-1 flex flex-col items-center justify-center p-6 md:p-12 text-center transition-opacity duration-300 ${
-          transitioning ? "opacity-0" : "opacity-100"
-        }`}
-      >
+          >
         <div className="text-8xl mb-8">{emojis[currentSlideIndex] || "📖"}</div>
 
         <p className="text-lg md:text-xl text-foreground leading-relaxed max-w-2xl mb-8">
@@ -195,6 +245,8 @@ const StoryViewer = () => {
           </Card>
         </DialogContent>
       </Dialog>
+        </>
+      )}
     </div>
   );
 };

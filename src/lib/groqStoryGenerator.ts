@@ -16,6 +16,16 @@ const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/
 const SAFE_IMAGE_STYLE_SUFFIX =
   "Children's book illustration, warm colors, innocent, safe educational tone, no scary elements, no violence, no nudity, non-threatening.";
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const tryParseJson = <T>(text: string): T | null => {
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+};
+
 export interface CharacterInput {
   name: string;
   description: string;
@@ -83,8 +93,21 @@ interface StoryTreeResponse {
 const parseJsonFromModel = <T>(content: string): T => {
   const trimmed = content.trim();
   const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-  const jsonText = fencedMatch ? fencedMatch[1] : trimmed;
-  return JSON.parse(jsonText) as T;
+  const jsonCandidate = fencedMatch ? fencedMatch[1] : trimmed;
+
+  const direct = tryParseJson<T>(jsonCandidate);
+  if (direct) return direct;
+
+  const start = jsonCandidate.indexOf("{");
+  const end = jsonCandidate.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    const slice = jsonCandidate.slice(start, end + 1);
+    const repaired = slice.replace(/,\s*([}\]])/g, "$1");
+    const parsed = tryParseJson<T>(repaired);
+    if (parsed) return parsed;
+  }
+
+  throw new Error("Unable to parse JSON from model response.");
 };
 
 const chatCompletion = async ({
@@ -100,54 +123,79 @@ const chatCompletion = async ({
   if (!apiKey) {
     throw new Error("Missing VITE_GROQ_API_KEY. Add it to your .env file.");
   }
+  const maxAttempts = 3;
 
-  const response = await fetch(GROQ_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0.4,
-      max_completion_tokens: 3500,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-    }),
-  });
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const response = await fetch(GROQ_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.4,
+        max_completion_tokens: 3500,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+      }),
+    });
 
-  if (!response.ok) {
-    let errorMessage = "Unknown Groq API error";
+    if (!response.ok) {
+      let errorMessage = "Unknown Groq API error";
 
-    try {
-      const errorPayload = await response.json();
-      errorMessage =
-        errorPayload?.error?.message ||
-        errorPayload?.message ||
-        JSON.stringify(errorPayload);
-    } catch {
-      errorMessage = await response.text();
+      try {
+        const errorPayload = await response.json();
+        errorMessage =
+          errorPayload?.error?.message ||
+          errorPayload?.message ||
+          JSON.stringify(errorPayload);
+      } catch {
+        errorMessage = await response.text();
+      }
+
+      const isRetriable = [408, 429, 500, 502, 503, 504].includes(response.status);
+      const isContextError =
+        response.status === 400 &&
+        /context|maximum context|token/i.test(errorMessage);
+
+      if (isContextError) {
+        throw new Error(
+          `Groq request too large. ${errorMessage}. Try reducing story description length or character details.`,
+        );
+      }
+
+      if (isRetriable && attempt < maxAttempts) {
+        const backoff = 600 * attempt;
+        console.warn(
+          `[SafeStory][Generation] Groq retry ${attempt}/${maxAttempts} after ${response.status}: ${errorMessage}`,
+        );
+        await sleep(backoff);
+        continue;
+      }
+
+      if (response.status === 400) {
+        throw new Error(
+          `Groq request rejected (400). ${errorMessage}. Check model names and input size in your .env settings.`,
+        );
+      }
+
+      throw new Error(`Groq API error (${response.status}): ${errorMessage}`);
     }
 
-    if (response.status === 400) {
-      throw new Error(
-        `Groq request rejected (400). ${errorMessage}. Check model names and input size in your .env settings.`,
-      );
+    const payload = await response.json();
+    const content = payload?.choices?.[0]?.message?.content;
+    if (!content || typeof content !== "string") {
+      throw new Error("Groq API returned an empty response.");
     }
 
-    throw new Error(`Groq API error (${response.status}): ${errorMessage}`);
+    return content;
   }
 
-  const payload = await response.json();
-  const content = payload?.choices?.[0]?.message?.content;
-  if (!content || typeof content !== "string") {
-    throw new Error("Groq API returned an empty response.");
-  }
-
-  return content;
+  throw new Error("Groq API failed after retries.");
 };
 
 const normalizeChoices = (choices?: StoryTreeResponse["slides"][number]["choices"]): GeneratedStoryChoice[] | undefined => {
@@ -160,12 +208,22 @@ const normalizeChoices = (choices?: StoryTreeResponse["slides"][number]["choices
   }));
 };
 
+const ensureSafeImagePrompt = (prompt?: string) => {
+  const cleaned = prompt?.trim();
+  if (!cleaned) return cleaned;
+  const lower = cleaned.toLowerCase();
+  if (lower.includes("children's book illustration") || lower.includes("safe educational tone")) {
+    return cleaned;
+  }
+  return `${cleaned}. ${SAFE_IMAGE_STYLE_SUFFIX}`;
+};
+
 const normalizeSlides = (slides: StoryTreeResponse["slides"]): GeneratedStorySlide[] => {
   const cleaned = slides
     .map((slide, index) => ({
       originalId: Number.isFinite(slide.id) ? slide.id : index + 1,
       text: slide.text?.trim(),
-      imagePrompt: slide.imagePrompt?.trim(),
+      imagePrompt: ensureSafeImagePrompt(slide.imagePrompt),
       choices: normalizeChoices(slide.choices),
     }))
     .filter((slide) => slide.text && slide.imagePrompt);
@@ -210,14 +268,22 @@ const normalizeSlides = (slides: StoryTreeResponse["slides"]): GeneratedStorySli
     const safeFallback = String(Math.min(index + 2, totalSlides));
     const unsafeFallback = String(Math.min(index + 3, totalSlides));
 
-    const repaired = slide.choices.slice(0, 2).map((choice, choiceIndex) => {
-      const mappedTarget = idMap.get(Number(choice.nextSlide));
-      const fallbackTarget = choice.isCorrect ? safeFallback : unsafeFallback;
+    const resolveTarget = (target: string, fallback: string) => {
+      const mappedTarget = idMap.get(Number(target));
+      if (mappedTarget && mappedTarget !== slide.id) {
+        return mappedTarget;
+      }
+      const fallbackIndex = Number(fallback);
+      if (fallbackIndex >= 1 && fallbackIndex <= totalSlides && fallback !== slide.id) {
+        return fallback;
+      }
+      const nextIndex = Math.min(index + 2, totalSlides);
+      return String(nextIndex === Number(slide.id) ? totalSlides : nextIndex);
+    };
 
-      const resolvedTarget =
-        mappedTarget && Number(mappedTarget) >= 1 && Number(mappedTarget) <= totalSlides && mappedTarget !== slide.id
-          ? mappedTarget
-          : fallbackTarget;
+    const repaired = slide.choices.slice(0, 2).map((choice, choiceIndex) => {
+      const fallbackTarget = choice.isCorrect ? safeFallback : unsafeFallback;
+      const resolvedTarget = resolveTarget(choice.nextSlide, fallbackTarget);
 
       const defaultLabel = choice.isCorrect
         ? "Ask for help from a trusted adult"
@@ -287,7 +353,9 @@ export const generateSlideImageWithPuter = async (prompt: string): Promise<strin
     }
 
     const data = await response.json();
-    const imageDataUrl = data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    const imageDataUrl =
+      data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data ||
+      data?.candidates?.[0]?.content?.parts?.[0]?.inline_data?.data;
 
     if (!imageDataUrl) {
       console.warn("[SafeStory] No image data returned from Gemini.");
@@ -303,7 +371,7 @@ export const generateSlideImageWithPuter = async (prompt: string): Promise<strin
 
 const generateBlueprint = async (input: StoryGenerationInput): Promise<StoryBlueprint> => {
   const system =
-    "You are a precise JSON generator for child-safe educational story planning under strict POCSO-aligned safeguards. Return valid JSON only, no markdown. Forbid explicit sexual content, nudity, indecent imagery, graphic violence, horror framing, or fear-based narration. Use trauma-informed, positive, age-appropriate language focused on feelings and safety actions.";
+    "You are a precise JSON generator for child-safe educational story planning under strict POCSO-aligned safeguards. Output valid JSON only. Never include markdown, commentary, or extra text. Forbid explicit sexual content, nudity, indecent imagery, graphic violence, or horror framing. Use trauma-informed, positive, age-appropriate language focused on feelings and safe actions.";
 
   const characterDetails = input.characters && input.characters.length > 0
     ? `\nCharacter specifications (use these exact details):\n${input.characters.map((c, i) => `${i + 1}. Name: ${c.name}, Description: ${c.description}`).join("\n")}`
@@ -350,7 +418,7 @@ const generateStoryTree = async (
   blueprint: StoryBlueprint,
 ): Promise<GeneratedStorySlide[]> => {
   const system =
-    "You are a storytelling engine for child safety education under strict POCSO-aligned constraints. Return valid JSON only with no markdown and no explanations. Never include explicit sexual content, nudity, indecent images, body-part explicitness, graphic violence, or horror elements. Use trauma-informed positive framing and age-appropriate language focused on feelings and protective actions (example tone: 'this feels wrong' and 'go to a trusted adult').";
+    "You are a storytelling engine for child safety education under strict POCSO-aligned constraints. Output valid JSON only with no markdown, no explanations, and no extra text. Never include explicit sexual content, nudity, indecent images, body-part explicitness, graphic violence, or horror elements. Use trauma-informed positive framing and age-appropriate language focused on feelings and protective actions (example tone: 'this feels wrong' and 'go to a trusted adult'). Keep the overall tone reassuring and empowering.";
 
   const user = `Using this blueprint JSON:\n${JSON.stringify(blueprint, null, 2)}\n\nGenerate a branching story JSON in ${input.language}.
 STRICT LEGAL + SAFETY RULES (MANDATORY):
@@ -368,7 +436,7 @@ PEDAGOGICAL STRUCTURE (MANDATORY):
   2) one Unsafe choice (isCorrect: false)
 - Choice button labels must be neutral and natural. Do NOT reveal which choice is right or wrong in the button label.
 - Safe branch must go to a slide that praises the child, reinforces the safety rule, and ends with a happy reassuring conclusion.
-- Unsafe branch must go to a slide that gently corrects the action immediately, then shows trusted adult intervention, and ends with comfort and safety.
+- Unsafe branch must go to a slide that gently corrects the action immediately, shows a trusted adult stepping in right away, and ends with comfort and safety.
 
 JSON + POINTER RULES (MANDATORY):
 - Every slide must contain integer id, text, imagePrompt.
@@ -452,9 +520,7 @@ export const generateStoryWithGroqAndPuterWithProgress = async (
 
   for (let index = 0; index < slides.length; index += 1) {
     const slide = slides[index];
-    const imageUrl = await generateSlideImageWithPuter(
-      `${slide.imagePrompt}. Medium quality children's book illustration, warm colors, innocent safe tone, clean 2D style, no scary or violent elements.`
-    );
+    const imageUrl = await generateSlideImageWithPuter(slide.imagePrompt);
 
     slidesWithImages.push({
       ...slide,
