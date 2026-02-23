@@ -4,10 +4,11 @@ import { Volume2, ArrowLeft, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { sampleStorySlides } from "@/data/mockData";
-import { loadGeneratedStory } from "@/lib/generatedStoryStorage";
 import { getStoryById } from "@/lib/supabaseStoryService";
+import { getStudentProfileByUserId } from "@/lib/supabaseStudentProfileService";
+import { createFollowUpAlert } from "@/lib/supabaseFollowUpService";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 const bgGradients = [
   "from-primary/5 to-secondary/5",
@@ -26,22 +27,43 @@ const StoryViewer = () => {
   const [showLearningCard, setShowLearningCard] = useState(false);
   const [loading, setLoading] = useState(false);
   const [storyData, setStoryData] = useState<any>(null);
+  const [studentName, setStudentName] = useState("Student");
+  const [hasLoggedWrongChoice, setHasLoggedWrongChoice] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
-  
-  const generatedStory = storyData || loadGeneratedStory();
-  const allSlides = generatedStory?.slides || sampleStorySlides;
+  const { user } = useAuth();
+
+  const generatedStory = storyData;
+  const allSlides = generatedStory?.slides || [];
   const currentSlideIndex = allSlides.findIndex((s: any) => s.id === currentSlideId);
   const slide = currentSlideIndex >= 0 ? allSlides[currentSlideIndex] : allSlides[0];
 
   useEffect(() => {
+    const loadStudentProfile = async () => {
+      if (!user?.id) return;
+
+      try {
+        const profile = await getStudentProfileByUserId(user.id);
+        if (profile?.name) {
+          setStudentName(profile.name);
+        }
+      } catch (error) {
+        console.warn("[SafeStory][Student] Could not load student profile name.", error);
+      }
+    };
+
+    loadStudentProfile();
+  }, [user]);
+
+  useEffect(() => {
     const loadStory = async () => {
       if (!id) {
-        // If no ID, try to load from localStorage (legacy behavior)
-        const localStory = loadGeneratedStory();
-        if (localStory) {
-          setStoryData(localStory);
-        }
+        toast({
+          title: "Story not found",
+          description: "A valid story ID is required.",
+          variant: "destructive",
+        });
+        navigate("/student/home");
         return;
       }
 
@@ -60,6 +82,8 @@ const StoryViewer = () => {
 
       // Set story data from story_data field
       setStoryData({
+        id: story.id,
+        ngoUserId: story.user_id,
         title: story.title,
         slides: story.story_data?.slides || [],
         moralLesson: story.story_data?.moralLesson,
@@ -70,6 +94,12 @@ const StoryViewer = () => {
     
     loadStory();
   }, [id, navigate, toast]);
+
+  useEffect(() => {
+    if (allSlides.length > 0) {
+      setCurrentSlideId(allSlides[0].id);
+    }
+  }, [allSlides]);
 
   const goToOutcome = (isCorrect: boolean) => {
     navigate("/student/reinforcement", {
@@ -95,11 +125,27 @@ const StoryViewer = () => {
     }, 300);
   };
 
-  const handleChoice = (nextSlide: string) => {
+  const handleChoice = async (nextSlide: string) => {
     const selected = slide.choices?.find((choice) => choice.nextSlide === nextSlide);
     const isCorrect = !!selected?.isCorrect;
 
     if (!isCorrect) {
+      if (!hasLoggedWrongChoice && user?.id && generatedStory?.id && generatedStory?.ngoUserId) {
+        try {
+          await createFollowUpAlert({
+            ngoUserId: generatedStory.ngoUserId,
+            studentUserId: user.id,
+            studentName,
+            storyId: generatedStory.id,
+            storyTitle: generatedStory.title || "Untitled Story",
+            reason: "Child selected an unsafe choice",
+          });
+          setHasLoggedWrongChoice(true);
+        } catch (error) {
+          console.error("[SafeStory][Student] Failed to create follow-up alert.", error);
+        }
+      }
+
       // Bad choice: show learning card instead of ending story
       setShowLearningCard(true);
     } else {
@@ -122,6 +168,13 @@ const StoryViewer = () => {
       {loading ? (
         <div className="flex-1 flex items-center justify-center">
           <p className="text-muted-foreground">Loading story...</p>
+        </div>
+      ) : allSlides.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center px-4">
+          <div className="text-center">
+            <p className="text-muted-foreground mb-4">No slides available for this story.</p>
+            <Button variant="outline" onClick={() => navigate("/student/home")}>Back to Home</Button>
+          </div>
         </div>
       ) : (
         <>

@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { avatars, ageGroups } from "@/data/mockData";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { upsertStudentProfile } from "@/lib/supabaseStudentProfileService";
 import logo from "@/assets/safe_story_logo.png";
 
 const StudentLogin = () => {
@@ -88,18 +89,20 @@ const StudentLogin = () => {
 
     setIsSubmitting(true);
     try {
-      await signUp(signupEmail, signupPassword, "student");
-      
-      // Store student profile in localStorage
-      localStorage.setItem(
-        `student_profile_${signupEmail}`,
-        JSON.stringify({
+      const { user } = await signUp(signupEmail, signupPassword, "student");
+
+      try {
+        await upsertStudentProfile({
+          userId: user.id,
+          email: signupEmail,
           name: signupName,
           ageGroup,
           avatar: selectedAvatar,
-        })
-      );
-
+        });
+      } catch (profileError) {
+        console.warn("[SafeStory][Student] Failed to save profile to Supabase, using local fallback.", profileError);
+      }
+      
       console.info("[SafeStory][Student] Signed up successfully");
       toast({
         title: "Account created",

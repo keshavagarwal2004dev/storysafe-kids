@@ -1,11 +1,13 @@
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { BookPlus, Users, BookOpen, TrendingUp, BarChart3 } from "lucide-react";
+import { BookPlus, Users, BookOpen, TrendingUp, BarChart3, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/AuthContext";
 import { getUserStories } from "@/lib/supabaseStoryService";
+import { FollowUpAlert, getNgoFollowUpAlerts, resolveFollowUpAlert } from "@/lib/supabaseFollowUpService";
+import { useToast } from "@/hooks/use-toast";
 
 interface Story {
   id: string;
@@ -18,33 +20,67 @@ interface Story {
 
 const Dashboard = () => {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [stories, setStories] = useState<Story[]>([]);
+  const [followUpAlerts, setFollowUpAlerts] = useState<FollowUpAlert[]>([]);
   const [loading, setLoading] = useState(true);
+  const [resolvingAlertId, setResolvingAlertId] = useState<string | null>(null);
+  const [showResolved, setShowResolved] = useState(false);
 
   useEffect(() => {
     const loadStories = async () => {
       if (!user?.id) return;
       setLoading(true);
-      const data = await getUserStories(user.id);
-      setStories(data || []);
+      const [storiesData, alertsData] = await Promise.all([
+        getUserStories(user.id),
+        getNgoFollowUpAlerts(user.id),
+      ]);
+      setStories(storiesData || []);
+      setFollowUpAlerts(alertsData || []);
       setLoading(false);
     };
     loadStories();
   }, [user]);
 
+  const handleResolveAlert = async (alertId: string) => {
+    try {
+      setResolvingAlertId(alertId);
+      await resolveFollowUpAlert(alertId);
+      setFollowUpAlerts((prev) =>
+        prev.map((alert) =>
+          alert.id === alertId
+            ? { ...alert, is_resolved: true, resolved_at: new Date().toISOString() }
+            : alert
+        )
+      );
+      toast({ title: "Marked as talked to" });
+    } catch (error) {
+      toast({
+        title: "Update failed",
+        description: error instanceof Error ? error.message : "Could not update follow-up status.",
+        variant: "destructive",
+      });
+    } finally {
+      setResolvingAlertId(null);
+    }
+  };
+
   const storiesCreated = stories.length;
-  const activeStories = stories.filter(s => s.status === "published").length;
-  const studentsReached = activeStories * 12; // Placeholder calculation
-  const completionRate = activeStories > 0 ? Math.round((activeStories / storiesCreated) * 100) : 0;
+  const publishedStories = stories.filter((story) => story.status === "published").length;
+  const draftStories = stories.filter((story) => story.status !== "published").length;
+  const uniqueTopics = new Set(stories.map((story) => story.topic).filter(Boolean));
+  const uniqueAgeGroups = new Set(stories.map((story) => story.age_group).filter(Boolean));
 
   const statCards = [
     { label: "Stories Created", value: storiesCreated, icon: BookOpen, color: "text-primary" },
-    { label: "Students Reached", value: studentsReached.toLocaleString(), icon: Users, color: "text-secondary" },
-    { label: "Completion Rate", value: `${completionRate}%`, icon: TrendingUp, color: "text-accent" },
-    { label: "Active Stories", value: activeStories, icon: BarChart3, color: "text-primary" },
+    { label: "Published Stories", value: publishedStories, icon: Users, color: "text-secondary" },
+    { label: "Draft Stories", value: draftStories, icon: TrendingUp, color: "text-accent" },
+    { label: "Topics Covered", value: uniqueTopics.size, icon: BarChart3, color: "text-primary" },
+    { label: "Age Groups Covered", value: uniqueAgeGroups.size, icon: BookOpen, color: "text-secondary" },
   ];
 
   const recentStories = stories.slice(0, 5);
+  const filteredFollowUps = showResolved ? followUpAlerts : followUpAlerts.filter((alert) => !alert.is_resolved);
 
   return (
     <div className="space-y-8">
@@ -75,6 +111,49 @@ const Dashboard = () => {
           </Card>
         ))}
       </div>
+
+      <Card className="border-0 shadow-card">
+        <CardHeader className="flex-row items-center justify-between">
+          <CardTitle className="text-lg">Children Needing Follow-up</CardTitle>
+          <Button variant="ghost" size="sm" onClick={() => setShowResolved((prev) => !prev)}>
+            {showResolved ? "Show Unresolved" : "Show All"}
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <p className="text-center text-muted-foreground py-2">Loading follow-ups...</p>
+          ) : filteredFollowUps.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No unresolved follow-ups right now.</p>
+          ) : (
+            <div className="space-y-3">
+              {filteredFollowUps.slice(0, 10).map((alert) => (
+                <div key={alert.id} className="rounded-xl border border-border p-3 flex items-center justify-between gap-3">
+                  <div>
+                    <p className={`font-medium ${alert.is_resolved ? "line-through text-muted-foreground" : "text-foreground"}`}>
+                      {alert.student_name}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {alert.story_title} • {new Date(alert.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                  {alert.is_resolved ? (
+                    <Badge variant="secondary" className="rounded-full">Talked</Badge>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={resolvingAlertId === alert.id}
+                      onClick={() => handleResolveAlert(alert.id)}
+                    >
+                      <CheckCircle2 className="h-4 w-4" /> Cross Out
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Recent Stories */}
       <Card className="border-0 shadow-card">

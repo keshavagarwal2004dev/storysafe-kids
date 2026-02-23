@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { sampleStorySlides } from "@/data/mockData";
 import { useToast } from "@/hooks/use-toast";
-import { GeneratedStorySlide, loadGeneratedStory } from "@/lib/generatedStoryStorage";
+import { GeneratedStorySlide } from "@/lib/generatedStoryStorage";
 import { generateSlideImageWithPuter } from "@/lib/groqStoryGenerator";
 import { StoryTreeVisualizer } from "@/components/StoryTreeVisualizer";
 import { getStoryById, updateStoryStatus } from "@/lib/supabaseStoryService";
@@ -82,13 +82,12 @@ const StoryEditor = () => {
   useEffect(() => {
     const loadStory = async () => {
       if (!id) {
-        // If no ID, try to load from localStorage (legacy behavior)
-        const generatedStory = loadGeneratedStory();
-        if (generatedStory) {
-          setStoryTitle(generatedStory.title || "Story Preview Editor");
-          setSlides(generatedStory.slides);
-          setCurrentSlide(0);
-        }
+        toast({
+          title: "Story not found",
+          description: "A valid story ID is required.",
+          variant: "destructive",
+        });
+        navigate("/ngo/my-stories");
         return;
       }
 
@@ -122,7 +121,11 @@ const StoryEditor = () => {
 
   const handleSaveDraft = async () => {
     if (!id || !storyData) {
-      toast({ title: "Draft saved to local storage!" });
+      toast({
+        title: "Save failed",
+        description: "A valid story ID is required.",
+        variant: "destructive",
+      });
       return;
     }
 

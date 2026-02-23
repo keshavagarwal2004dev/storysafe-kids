@@ -22,6 +22,10 @@ npm run dev
 - Story created will be saved to Supabase automatically
 - Logout and login again → story still there ✅
 
+### Supabase-Only Mode
+- App data persistence is Supabase-only.
+- No localStorage fallback is used for stories, student profiles, or role resolution.
+
 ---
 
 ## 📚 Common Tasks
@@ -107,6 +111,11 @@ import {
   deleteStory,              // Remove story
   getPublishedStories,      // Get public stories
 } from "@/lib/supabaseStoryService";
+
+import {
+  upsertStudentProfile,     // Save child profile
+  getChildrenCount,         // Analytics child count
+} from "@/lib/supabaseStudentProfileService";
 ```
 
 ---
@@ -141,6 +150,34 @@ id (UUID)
 ├── status (TEXT) -- 'draft' or 'published'
 ├── created_at (TIMESTAMP)
 └── updated_at (TIMESTAMP)
+```
+
+**Table**: `student_profiles`
+
+```sql
+id (UUID)
+├── user_id (FK to auth.users, UNIQUE)
+├── email (TEXT)
+├── name (TEXT)
+├── age_group (TEXT)
+├── avatar (TEXT)
+├── created_at (TIMESTAMP)
+└── updated_at (TIMESTAMP)
+```
+
+**Table**: `student_follow_up_alerts`
+
+```sql
+id (UUID)
+├── ngo_user_id (FK to auth.users)
+├── student_user_id (FK to auth.users)
+├── student_name (TEXT)
+├── story_id (FK to stories.id)
+├── story_title (TEXT)
+├── reason (TEXT)
+├── is_resolved (BOOLEAN)
+├── created_at (TIMESTAMP)
+└── resolved_at (TIMESTAMP)
 ```
 
 ---

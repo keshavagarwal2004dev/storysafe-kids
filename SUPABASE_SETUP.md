@@ -99,6 +99,81 @@ CREATE POLICY "Users can only delete their own stories" ON stories
 CREATE POLICY "Anyone can read published stories" ON stories
   FOR SELECT
   USING (status = 'published');
+
+-- Create student profiles table (children data)
+CREATE TABLE IF NOT EXISTS student_profiles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  name TEXT NOT NULL,
+  age_group TEXT NOT NULL,
+  avatar TEXT,
+  created_at TIMESTAMP DEFAULT now(),
+  updated_at TIMESTAMP DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_student_profiles_user_id ON student_profiles(user_id);
+CREATE INDEX IF NOT EXISTS idx_student_profiles_age_group ON student_profiles(age_group);
+
+ALTER TABLE student_profiles ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Students can read own profile" ON student_profiles
+  FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Students can insert own profile" ON student_profiles
+  FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Students can update own profile" ON student_profiles
+  FOR UPDATE
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Students can delete own profile" ON student_profiles
+  FOR DELETE
+  USING (auth.uid() = user_id);
+
+-- NGOs can read aggregated children data (e.g., analytics counts)
+CREATE POLICY "Authenticated users can read student profiles" ON student_profiles
+  FOR SELECT
+  USING (auth.role() = 'authenticated');
+
+-- Create follow-up alerts table (wrong decisions for NGO follow-up)
+CREATE TABLE IF NOT EXISTS student_follow_up_alerts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ngo_user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  student_user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  student_name TEXT NOT NULL,
+  story_id UUID NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+  story_title TEXT NOT NULL,
+  reason TEXT NOT NULL DEFAULT 'Unsafe choice selected in story',
+  is_resolved BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  resolved_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_follow_up_ngo_user_id ON student_follow_up_alerts(ngo_user_id);
+CREATE INDEX IF NOT EXISTS idx_follow_up_student_user_id ON student_follow_up_alerts(student_user_id);
+CREATE INDEX IF NOT EXISTS idx_follow_up_resolved ON student_follow_up_alerts(is_resolved);
+CREATE INDEX IF NOT EXISTS idx_follow_up_created_at ON student_follow_up_alerts(created_at);
+
+ALTER TABLE student_follow_up_alerts ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Students can insert own follow-up alerts" ON student_follow_up_alerts
+  FOR INSERT
+  WITH CHECK (auth.uid() = student_user_id);
+
+CREATE POLICY "Students can read own follow-up alerts" ON student_follow_up_alerts
+  FOR SELECT
+  USING (auth.uid() = student_user_id);
+
+CREATE POLICY "NGOs can read own follow-up alerts" ON student_follow_up_alerts
+  FOR SELECT
+  USING (auth.uid() = ngo_user_id);
+
+CREATE POLICY "NGOs can update own follow-up alerts" ON student_follow_up_alerts
+  FOR UPDATE
+  USING (auth.uid() = ngo_user_id);
 ```
 
 ### 5. Test the Setup
@@ -134,12 +209,16 @@ Groq AI Generation (blueprint + tree)
     ↓
 Gemini Image Generation
     ↓
-localStorage (for editor session)
-    ↓
 saveStoryToSupabase(userId, story, "draft")
     ↓
 Supabase Database
 ```
+
+### Supabase-Only Persistence
+
+- Stories and student profiles are stored in Supabase only.
+- There is no localStorage fallback for auth role, profile, or story content.
+- If a record is missing in Supabase, the UI shows an error/empty state instead of loading local data.
 
 ### Publishing Flow
 

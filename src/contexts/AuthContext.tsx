@@ -30,10 +30,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (metaType === "ngo" || metaType === "student") {
       return metaType;
     }
-    const storedUserType = authUser ? localStorage.getItem(`user_type_${authUser.id}`) : null;
-    if (storedUserType === "ngo" || storedUserType === "student") {
-      return storedUserType;
-    }
     return null;
   };
 
@@ -89,8 +85,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (error) throw error;
       if (!data.user) throw new Error("Sign up failed - user not created");
 
-      // Store user type in localStorage (even if email confirmation pending)
-      localStorage.setItem(`user_type_${data.user.id}`, userTypeArg);
       setUserType(userTypeArg);
       setUser(data.user);
       if (data.session) {
@@ -135,7 +129,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (updateError) throw updateError;
         finalUser = updated.user ?? data.user;
         finalUserType = userTypeArg;
-        localStorage.setItem(`user_type_${finalUser.id}`, userTypeArg);
       }
 
       setUser(finalUser);

@@ -12,7 +12,6 @@ import { useToast } from "@/hooks/use-toast";
 import { GenerationProgressEvent, generateStoryWithGroqAndPuter, CharacterInput } from "@/lib/groqStoryGenerator";
 import { useAuth } from "@/contexts/AuthContext";
 import { saveStoryToSupabase } from "@/lib/supabaseStoryService";
-import { saveGeneratedStory } from "@/lib/generatedStoryStorage";
 
 const generationSteps = [
   "Preparing request",
@@ -122,6 +121,16 @@ const CreateStory = () => {
     setImagesProgress(null);
     console.info("[SafeStory][NGO] Generation started from Create Story form.");
 
+    if (!user?.id) {
+      toast({
+        title: "Authentication required",
+        description: "Please sign in as NGO to generate and save stories.",
+        variant: "destructive",
+      });
+      setIsGenerating(false);
+      return;
+    }
+
     try {
       const generated = await generateStoryWithGroqAndPuter({
         topic,
@@ -134,30 +143,21 @@ const CreateStory = () => {
         moralLesson,
       }, { onProgress: handleProgress });
 
-      // Save to localStorage for editor to access
-      saveGeneratedStory(generated);
-
-      // Save to Supabase
-      if (user) {
-        const supabaseStory = await saveStoryToSupabase(
-          user.id,
-          {
-            ...generated,
-            topic,
-            ageGroup,
-            language,
-            characterCount: Number(characterCount),
-            regionContext,
-            description,
-            moralLesson,
-          },
-          "draft"
-        );
-        
-        // Store the Supabase story ID for the editor
-        localStorage.setItem("current_story_id", supabaseStory.id);
-        console.info("[SafeStory][NGO] Story saved to Supabase:", supabaseStory.id);
-      }
+      const supabaseStory = await saveStoryToSupabase(
+        user.id,
+        {
+          ...generated,
+          topic,
+          ageGroup,
+          language,
+          characterCount: Number(characterCount),
+          regionContext,
+          description,
+          moralLesson,
+        },
+        "draft"
+      );
+      console.info("[SafeStory][NGO] Story saved to Supabase:", supabaseStory.id);
 
       console.info("[SafeStory][NGO] Generation completed and story saved for editor.", {
         slides: generated.slides.length,
@@ -169,7 +169,7 @@ const CreateStory = () => {
         description: `Generated ${generated.slides.length} slides with branching choices.`,
       });
 
-      navigate("/ngo/story-editor");
+      navigate(`/ngo/story-editor/${supabaseStory.id}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Story generation failed.";
       toast({

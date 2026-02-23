@@ -1,5 +1,3 @@
-export const GENERATED_STORY_STORAGE_KEY = "safestory.generatedStory";
-
 export interface GeneratedStoryChoice {
   label: string;
   nextSlide: string;
@@ -42,22 +40,3 @@ export interface GeneratedStory {
     generationModel?: string;
   };
 }
-
-export const saveGeneratedStory = (story: GeneratedStory) => {
-  localStorage.setItem(GENERATED_STORY_STORAGE_KEY, JSON.stringify(story));
-};
-
-export const loadGeneratedStory = (): GeneratedStory | null => {
-  const raw = localStorage.getItem(GENERATED_STORY_STORAGE_KEY);
-  if (!raw) return null;
-
-  try {
-    return JSON.parse(raw) as GeneratedStory;
-  } catch {
-    return null;
-  }
-};
-
-export const clearGeneratedStory = () => {
-  localStorage.removeItem(GENERATED_STORY_STORAGE_KEY);
-};

@@ -1,12 +1,23 @@
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { Eye, Pencil, Copy, BookPlus } from "lucide-react";
+import { Eye, Pencil, Copy, BookPlus, Trash2, Loader2, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/AuthContext";
-import { getUserStories } from "@/lib/supabaseStoryService";
+import { getUserStories, deleteStory, updateStoryStatus } from "@/lib/supabaseStoryService";
 import { useToast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface Story {
   id: string;
@@ -23,6 +34,8 @@ const MyStories = () => {
   const { toast } = useToast();
   const [stories, setStories] = useState<Story[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingStoryId, setDeletingStoryId] = useState<string | null>(null);
+  const [publishingStoryId, setPublishingStoryId] = useState<string | null>(null);
 
   useEffect(() => {
     const loadStories = async () => {
@@ -40,6 +53,46 @@ const MyStories = () => {
       title: "Coming soon",
       description: "Story duplication will be available soon",
     });
+  };
+
+  const handleDeleteStory = async (storyId: string) => {
+    try {
+      setDeletingStoryId(storyId);
+      await deleteStory(storyId);
+      setStories((prev) => prev.filter((story) => story.id !== storyId));
+      toast({
+        title: "Story deleted",
+        description: "The story was removed successfully.",
+      });
+    } catch (error) {
+      toast({
+        title: "Delete failed",
+        description: error instanceof Error ? error.message : "Could not delete the story.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingStoryId(null);
+    }
+  };
+
+  const handlePublishStory = async (storyId: string) => {
+    try {
+      setPublishingStoryId(storyId);
+      await updateStoryStatus(storyId, "published");
+      setStories((prev) => prev.map((story) => (story.id === storyId ? { ...story, status: "published" } : story)));
+      toast({
+        title: "Story published",
+        description: "Students can now view this story.",
+      });
+    } catch (error) {
+      toast({
+        title: "Publish failed",
+        description: error instanceof Error ? error.message : "Could not publish the story.",
+        variant: "destructive",
+      });
+    } finally {
+      setPublishingStoryId(null);
+    }
   };
 
   const getRandomColor = () => {
@@ -102,7 +155,44 @@ const MyStories = () => {
                   <Button variant="ghost" size="icon" className="shrink-0" onClick={() => duplicateStory(story.id)}>
                     <Copy className="h-3 w-3" />
                   </Button>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="ghost" size="icon" className="shrink-0" disabled={deletingStoryId === story.id}>
+                        {deletingStoryId === story.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete this story?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This action cannot be undone. "{story.title}" will be permanently deleted.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => handleDeleteStory(story.id)}>
+                          Delete
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </div>
+                {story.status !== "published" && (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="w-full mt-2"
+                    disabled={publishingStoryId === story.id}
+                    onClick={() => handlePublishStory(story.id)}
+                  >
+                    {publishingStoryId === story.id ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="h-3 w-3" />
+                    )}
+                    Publish
+                  </Button>
+                )}
               </CardContent>
             </Card>
           ))}
