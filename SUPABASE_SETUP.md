@@ -147,6 +147,7 @@ CREATE TABLE IF NOT EXISTS student_follow_up_alerts (
   story_id UUID NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
   story_title TEXT NOT NULL,
   reason TEXT NOT NULL DEFAULT 'Unsafe choice selected in story',
+  language TEXT DEFAULT 'English',
   is_resolved BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   resolved_at TIMESTAMPTZ
@@ -401,6 +402,26 @@ await getPublishedStories({ topic?, ageGroup?, language? })
 - **Database > Tables > stories** - View all stored stories
 - **Database > Logs** - See SQL query logs
 - **API > Usage** - Monitor API requests
+
+## Database Migrations
+
+### Adding Language Column to Existing Databases
+
+If you created the `student_follow_up_alerts` table before the language feature was added, run this migration in the Supabase SQL Editor:
+
+```sql
+-- Add language column to existing follow-up alerts table
+ALTER TABLE student_follow_up_alerts 
+ADD COLUMN language TEXT DEFAULT 'English';
+
+-- Create index for faster language-based queries
+CREATE INDEX IF NOT EXISTS idx_follow_up_language ON student_follow_up_alerts(language);
+```
+
+This enables:
+- Follow-up alert reasons in the story's language
+- Multi-language notifications for NGOs
+- Proper localization support for all follow-up cards
 
 ## Support
 

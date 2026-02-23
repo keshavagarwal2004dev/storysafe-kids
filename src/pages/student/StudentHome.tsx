@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getPublishedStories } from "@/lib/supabaseStoryService";
 import { getLastOpenedStoryProgress, StudentStoryProgress } from "@/lib/supabaseStudentProgressService";
+import { getTranslation } from "@/lib/translations";
 import { useAuth } from "@/contexts/AuthContext";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -61,7 +62,9 @@ const StudentHome = () => {
     stories[0] ||
     null;
 
-  const continueLabel = lastProgress?.completed ? "Read again" : "Continue your journey";
+  const continueLabel = lastProgress?.completed 
+    ? getTranslation(continueStory?.language, "readAgain")
+    : getTranslation(continueStory?.language, "continueYourJourney");
 
   return (
     <div className="p-4 md:p-8 max-w-6xl mx-auto">

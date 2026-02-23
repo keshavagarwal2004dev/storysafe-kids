@@ -8,6 +8,7 @@ import { getStoryById } from "@/lib/supabaseStoryService";
 import { getStudentProfileByUserId } from "@/lib/supabaseStudentProfileService";
 import { createFollowUpAlert } from "@/lib/supabaseFollowUpService";
 import { upsertStudentStoryProgress } from "@/lib/supabaseStudentProgressService";
+import { getTranslation } from "@/lib/translations";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -173,7 +174,8 @@ const StoryViewer = () => {
             studentName,
             storyId: generatedStory.id,
             storyTitle: generatedStory.title || "Untitled Story",
-            reason: "Child selected an unsafe choice",
+            language: generatedStory.language || "English",
+            reason: getTranslation(generatedStory.language, "unsafeChoice"),
           });
           setHasLoggedWrongChoice(true);
         } catch (error) {
@@ -208,7 +210,9 @@ const StoryViewer = () => {
         <div className="flex-1 flex items-center justify-center px-4">
           <div className="text-center">
             <p className="text-muted-foreground mb-4">No slides available for this story.</p>
-            <Button variant="outline" onClick={() => navigate("/student/home")}>Back to Home</Button>
+            <Button variant="outline" onClick={() => navigate("/student/home")}>
+              {getTranslation(generatedStory?.language, "backToHome")}
+            </Button>
           </div>
         </div>
       ) : (

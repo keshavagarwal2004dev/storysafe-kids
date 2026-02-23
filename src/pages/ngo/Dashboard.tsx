@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/AuthContext";
 import { getUserStories } from "@/lib/supabaseStoryService";
 import { FollowUpAlert, getNgoFollowUpAlerts, resolveFollowUpAlert } from "@/lib/supabaseFollowUpService";
+import { getTranslation } from "@/lib/translations";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -54,7 +55,8 @@ const Dashboard = () => {
             : alert
         )
       );
-      toast({ title: "Marked as talked to" });
+      const resolvedAlert = followUpAlerts.find(a => a.id === alertId);
+      toast({ title: getTranslation(resolvedAlert?.language, "markedAsResolved") });
     } catch (error) {
       toast({
         title: "Update failed",
@@ -144,13 +146,21 @@ const Dashboard = () => {
           ) : (
             <div className="space-y-3">
               {filteredFollowUps.slice(0, 10).map((alert) => (
-                <div key={alert.id} className="rounded-xl border border-border p-3 flex items-center justify-between gap-3">
-                  <div>
-                    <p className={`font-medium ${alert.is_resolved ? "line-through text-muted-foreground" : "text-foreground"}`}>
-                      {alert.student_name}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
+                <div key={alert.id} className="rounded-xl border border-border p-3 flex items-start justify-between gap-3">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className={`font-medium ${alert.is_resolved ? "line-through text-muted-foreground" : "text-foreground"}`}>
+                        {alert.student_name}
+                      </p>
+                      {alert.language && alert.language !== "English" && (
+                        <Badge variant="outline" className="text-xs rounded-full">{alert.language}</Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-1">
                       {alert.story_title} • {new Date(alert.created_at).toLocaleDateString()}
+                    </p>
+                    <p className="text-xs text-muted-foreground italic">
+                      {alert.reason}
                     </p>
                   </div>
                   {alert.is_resolved ? (

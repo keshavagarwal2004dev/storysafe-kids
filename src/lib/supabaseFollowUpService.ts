@@ -8,6 +8,7 @@ export interface FollowUpAlert {
   story_id: string;
   story_title: string;
   reason: string;
+  language?: string;
   is_resolved: boolean;
   created_at: string;
   resolved_at?: string | null;
@@ -19,6 +20,7 @@ export const createFollowUpAlert = async (payload: {
   studentName: string;
   storyId: string;
   storyTitle: string;
+  language?: string;
   reason?: string;
 }): Promise<FollowUpAlert> => {
   const { data, error } = await supabase
@@ -29,6 +31,7 @@ export const createFollowUpAlert = async (payload: {
       student_name: payload.studentName,
       story_id: payload.storyId,
       story_title: payload.storyTitle,
+      language: payload.language || "English",
       reason: payload.reason || "Unsafe choice selected in story",
       is_resolved: false,
     })
