@@ -7,6 +7,7 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { getStoryById } from "@/lib/supabaseStoryService";
 import { getStudentProfileByUserId } from "@/lib/supabaseStudentProfileService";
 import { createFollowUpAlert } from "@/lib/supabaseFollowUpService";
+import { upsertStudentStoryProgress } from "@/lib/supabaseStudentProgressService";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -81,19 +82,36 @@ const StoryViewer = () => {
       }
 
       // Set story data from story_data field
+      const loadedSlides = story.story_data?.slides || [];
+      const initialSlideId = loadedSlides[0]?.id || "1";
+
       setStoryData({
         id: story.id,
         ngoUserId: story.user_id,
         title: story.title,
-        slides: story.story_data?.slides || [],
+        slides: loadedSlides,
         moralLesson: story.story_data?.moralLesson,
       });
+      setCurrentSlideId(initialSlideId);
+
+      if (user?.id) {
+        try {
+          await upsertStudentStoryProgress({
+            studentUserId: user.id,
+            storyId: story.id,
+            currentSlideId: initialSlideId,
+            completed: false,
+          });
+        } catch (progressError) {
+          console.warn("[SafeStory][Student] Could not initialize story progress.", progressError);
+        }
+      }
       
       setLoading(false);
     };
     
     loadStory();
-  }, [id, navigate, toast]);
+  }, [id, navigate, toast, user]);
 
   useEffect(() => {
     if (allSlides.length > 0) {
@@ -101,7 +119,23 @@ const StoryViewer = () => {
     }
   }, [allSlides]);
 
+  const persistProgress = async (slideId: string, completed = false) => {
+    if (!user?.id || !generatedStory?.id) return;
+
+    try {
+      await upsertStudentStoryProgress({
+        studentUserId: user.id,
+        storyId: generatedStory.id,
+        currentSlideId: slideId,
+        completed,
+      });
+    } catch (error) {
+      console.warn("[SafeStory][Student] Failed to persist story progress.", error);
+    }
+  };
+
   const goToOutcome = (isCorrect: boolean) => {
+    void persistProgress(currentSlideId, true);
     navigate("/student/reinforcement", {
       state: {
         outcome: isCorrect ? "positive" : "educational",
@@ -120,6 +154,7 @@ const StoryViewer = () => {
         goToOutcome(true);
       } else {
         setCurrentSlideId(slideId);
+        void persistProgress(slideId, false);
       }
       setTransitioning(false);
     }, 300);

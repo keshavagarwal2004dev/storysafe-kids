@@ -10,7 +10,7 @@ export const ageGroups = ["4-6 years", "7-9 years", "10-12 years", "13-15 years"
 
 export const languages = ["English", "Hindi", "Tamil", "Bengali", "Marathi", "Telugu", "Kannada"] as const;
 
-export const avatars = ["🧒", "👧", "👦", "👶", "🧒🏽", "👧🏾", "👦🏻", "👧🏼"] as const;
+export const avatars = ["🐶", "🐱", "🐰", "🦊", "🐼", "🐨", "🦁", "🐯"] as const;
 
 export interface Story {
   id: string;

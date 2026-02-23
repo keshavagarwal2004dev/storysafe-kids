@@ -34,9 +34,6 @@ const App = () => (
             <Route path="/" element={<Landing />} />
             <Route path="/ngo-login" element={<NGOLogin />} />
             <Route path="/student-login" element={<StudentLogin />} />
-            {/* Legacy routes */}
-            <Route path="/login/ngo" element={<Navigate to="/ngo-login" replace />} />
-            <Route path="/login/student" element={<Navigate to="/student-login" replace />} />
 
             {/* NGO Portal - Protected */}
             <Route

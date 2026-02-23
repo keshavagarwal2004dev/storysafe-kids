@@ -8,6 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { getUserStories } from "@/lib/supabaseStoryService";
 import { FollowUpAlert, getNgoFollowUpAlerts, resolveFollowUpAlert } from "@/lib/supabaseFollowUpService";
 import { useToast } from "@/hooks/use-toast";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface Story {
   id: string;
@@ -99,17 +100,26 @@ const Dashboard = () => {
 
       {/* Stats */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {statCards.map((stat) => (
-          <Card key={stat.label} className="border-0 shadow-card">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-sm text-muted-foreground">{stat.label}</span>
-                <stat.icon className={`h-5 w-5 ${stat.color}`} />
-              </div>
-              <p className="text-3xl font-bold text-foreground">{stat.value}</p>
-            </CardContent>
-          </Card>
-        ))}
+        {loading
+          ? [1, 2, 3, 4].map((item) => (
+              <Card key={item} className="border-0 shadow-card">
+                <CardContent className="p-6 space-y-3">
+                  <Skeleton className="h-4 w-1/2" />
+                  <Skeleton className="h-8 w-1/3" />
+                </CardContent>
+              </Card>
+            ))
+          : statCards.map((stat) => (
+              <Card key={stat.label} className="border-0 shadow-card">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm text-muted-foreground">{stat.label}</span>
+                    <stat.icon className={`h-5 w-5 ${stat.color}`} />
+                  </div>
+                  <p className="text-3xl font-bold text-foreground">{stat.value}</p>
+                </CardContent>
+              </Card>
+            ))}
       </div>
 
       <Card className="border-0 shadow-card">
@@ -121,7 +131,14 @@ const Dashboard = () => {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <p className="text-center text-muted-foreground py-2">Loading follow-ups...</p>
+            <div className="space-y-3">
+              {[1, 2, 3].map((item) => (
+                <div key={item} className="rounded-xl border border-border p-3">
+                  <Skeleton className="h-5 w-40 mb-2" />
+                  <Skeleton className="h-4 w-56" />
+                </div>
+              ))}
+            </div>
           ) : filteredFollowUps.length === 0 ? (
             <p className="text-sm text-muted-foreground">No unresolved follow-ups right now.</p>
           ) : (
@@ -165,7 +182,16 @@ const Dashboard = () => {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <p className="text-center text-muted-foreground py-4">Loading...</p>
+            <div className="space-y-3 py-1">
+              {[1, 2, 3, 4].map((item) => (
+                <div key={item} className="grid grid-cols-4 gap-4">
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-full hidden sm:block" />
+                  <Skeleton className="h-4 w-full hidden md:block" />
+                  <Skeleton className="h-4 w-20" />
+                </div>
+              ))}
+            </div>
           ) : recentStories.length === 0 ? (
             <div className="text-center py-8">
               <p className="text-muted-foreground mb-4">No stories yet. Create your first one!</p>

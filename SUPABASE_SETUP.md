@@ -174,6 +174,37 @@ CREATE POLICY "NGOs can read own follow-up alerts" ON student_follow_up_alerts
 CREATE POLICY "NGOs can update own follow-up alerts" ON student_follow_up_alerts
   FOR UPDATE
   USING (auth.uid() = ngo_user_id);
+
+-- Create student story progress table (linear continue experience)
+CREATE TABLE IF NOT EXISTS student_story_progress (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  student_user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  story_id UUID NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+  current_slide_id TEXT,
+  completed BOOLEAN NOT NULL DEFAULT false,
+  last_opened_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(student_user_id, story_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_story_progress_student_id ON student_story_progress(student_user_id);
+CREATE INDEX IF NOT EXISTS idx_story_progress_story_id ON student_story_progress(story_id);
+CREATE INDEX IF NOT EXISTS idx_story_progress_last_opened ON student_story_progress(last_opened_at);
+
+ALTER TABLE student_story_progress ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Students can read own story progress" ON student_story_progress
+  FOR SELECT
+  USING (auth.uid() = student_user_id);
+
+CREATE POLICY "Students can insert own story progress" ON student_story_progress
+  FOR INSERT
+  WITH CHECK (auth.uid() = student_user_id);
+
+CREATE POLICY "Students can update own story progress" ON student_story_progress
+  FOR UPDATE
+  USING (auth.uid() = student_user_id);
 ```
 
 ### 5. Test the Setup

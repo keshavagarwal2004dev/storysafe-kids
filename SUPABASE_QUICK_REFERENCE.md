@@ -180,6 +180,19 @@ id (UUID)
 └── resolved_at (TIMESTAMP)
 ```
 
+**Table**: `student_story_progress`
+
+```sql
+id (UUID)
+├── student_user_id (FK to auth.users)
+├── story_id (FK to stories.id)
+├── current_slide_id (TEXT)
+├── completed (BOOLEAN)
+├── last_opened_at (TIMESTAMP)
+├── created_at (TIMESTAMP)
+└── updated_at (TIMESTAMP)
+```
+
 ---
 
 ## 🐛 Debugging Tips

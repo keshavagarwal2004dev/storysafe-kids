@@ -7,6 +7,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getPublishedStories } from "@/lib/supabaseStoryService";
+import { getLastOpenedStoryProgress, StudentStoryProgress } from "@/lib/supabaseStudentProgressService";
+import { useAuth } from "@/contexts/AuthContext";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface Story {
   id: string;
@@ -19,20 +22,30 @@ interface Story {
 }
 
 const StudentHome = () => {
+  const { user } = useAuth();
   const [stories, setStories] = useState<Story[]>([]);
+  const [lastProgress, setLastProgress] = useState<StudentStoryProgress | null>(null);
   const [loading, setLoading] = useState(true);
   const [topicFilter, setTopicFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
 
   useEffect(() => {
     const loadStories = async () => {
+      if (!user?.id) {
+        setLoading(false);
+        return;
+      }
       setLoading(true);
-      const data = await getPublishedStories();
-      setStories(data || []);
+      const [storiesData, progressData] = await Promise.all([
+        getPublishedStories(),
+        getLastOpenedStoryProgress(user.id),
+      ]);
+      setStories(storiesData || []);
+      setLastProgress(progressData);
       setLoading(false);
     };
     loadStories();
-  }, []);
+  }, [user]);
 
   // Extract unique topics from stories
   const topics = Array.from(new Set(stories.map(s => s.topic).filter(Boolean))) as string[];
@@ -48,6 +61,13 @@ const StudentHome = () => {
     return colors[Math.floor(Math.random() * colors.length)];
   };
 
+  const continueStory =
+    stories.find((story) => story.id === lastProgress?.story_id) ||
+    stories[0] ||
+    null;
+
+  const continueLabel = lastProgress?.completed ? "Read again" : "Continue your journey";
+
   return (
     <div className="p-4 md:p-8 max-w-6xl mx-auto">
       {/* Welcome */}
@@ -59,18 +79,18 @@ const StudentHome = () => {
       </div>
 
       {/* Continue Last Story */}
-      {filtered.length > 0 && (
+      {continueStory && (
         <Card className="border-0 shadow-soft bg-gradient-hero mb-8 overflow-hidden">
           <CardContent className="p-6 flex flex-col sm:flex-row items-center gap-4">
             <div className="text-5xl">📖</div>
             <div className="flex-1 text-center sm:text-left">
-              <p className="text-xs font-medium text-primary mb-1">Start your journey</p>
-              <h3 className="text-lg font-bold text-foreground">{filtered[0].title}</h3>
-              <p className="text-sm text-muted-foreground">{filtered[0].topic} · {filtered[0].age_group || "All ages"}</p>
+              <p className="text-xs font-medium text-primary mb-1">{continueLabel}</p>
+              <h3 className="text-lg font-bold text-foreground">{continueStory.title}</h3>
+              <p className="text-sm text-muted-foreground">{continueStory.topic} · {continueStory.age_group || "All ages"}</p>
             </div>
             <Button asChild>
-              <Link to={`/student/story/${filtered[0].id}`}>
-                Start <ArrowRight className="h-4 w-4" />
+              <Link to={`/student/story/${continueStory.id}`}>
+                Continue <ArrowRight className="h-4 w-4" />
               </Link>
             </Button>
           </CardContent>
@@ -102,8 +122,19 @@ const StudentHome = () => {
 
       {/* Story Grid */}
       {loading ? (
-        <div className="text-center py-16">
-          <p className="text-muted-foreground">Loading stories...</p>
+        <div className="space-y-6 py-2">
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {[1, 2, 3, 4, 5, 6].map((item) => (
+              <Card key={item} className="border-0 shadow-card overflow-hidden">
+                <Skeleton className="h-36 w-full" />
+                <CardContent className="p-5 space-y-3">
+                  <Skeleton className="h-5 w-24 rounded-full" />
+                  <Skeleton className="h-5 w-3/4" />
+                  <Skeleton className="h-4 w-1/2" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-16">
