@@ -56,11 +56,6 @@ const StudentHome = () => {
     return true;
   });
 
-  const getRandomColor = () => {
-    const colors = ["#FF6B6B", "#4ECDC4", "#FFE66D", "#95E1D3", "#F38181"];
-    return colors[Math.floor(Math.random() * colors.length)];
-  };
-
   const continueStory =
     stories.find((story) => story.id === lastProgress?.story_id) ||
     stories[0] ||
@@ -151,10 +146,7 @@ const StudentHome = () => {
           {filtered.map((story) => (
             <Link key={story.id} to={`/student/story/${story.id}`}>
               <Card className="border-0 shadow-card overflow-hidden group hover:shadow-soft transition-all hover:-translate-y-1 cursor-pointer">
-                <div
-                  className="h-36 flex items-center justify-center text-5xl"
-                  style={{ background: `${getRandomColor()}15` }}
-                >
+                <div className="h-36 flex items-center justify-center text-5xl bg-gradient-warm">
                   📚
                 </div>
                 <CardContent className="p-5">

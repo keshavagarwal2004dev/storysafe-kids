@@ -4,49 +4,49 @@
 
 @layer base {
   :root {
-    --background: 40 33% 97%;
-    --foreground: 220 30% 18%;
+    --background: 0 0% 100%;
+    --foreground: 220 13% 20%;
 
     --card: 0 0% 100%;
-    --card-foreground: 220 30% 18%;
+    --card-foreground: 220 13% 20%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 220 30% 18%;
+    --popover-foreground: 220 13% 20%;
 
-    --primary: 152 45% 42%;
+    --primary: 160 84% 39%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 207 55% 55%;
+    --secondary: 200 80% 45%;
     --secondary-foreground: 0 0% 100%;
 
-    --muted: 40 20% 93%;
-    --muted-foreground: 220 15% 50%;
+    --muted: 220 13% 91%;
+    --muted-foreground: 220 10% 45%;
 
-    --accent: 25 85% 65%;
-    --accent-foreground: 0 0% 100%;
+    --accent: 35 92% 50%;
+    --accent-foreground: 0 0% 0%;
 
-    --destructive: 0 72% 55%;
+    --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 40 20% 88%;
-    --input: 40 20% 88%;
-    --ring: 152 45% 42%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 160 84% 39%;
 
     --radius: 0.75rem;
 
-    --sidebar-background: 152 30% 97%;
-    --sidebar-foreground: 220 30% 18%;
-    --sidebar-primary: 152 45% 42%;
+    --sidebar-background: 160 20% 97%;
+    --sidebar-foreground: 220 13% 20%;
+    --sidebar-primary: 160 84% 39%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 152 25% 92%;
-    --sidebar-accent-foreground: 220 30% 18%;
-    --sidebar-border: 152 15% 88%;
-    --sidebar-ring: 152 45% 42%;
+    --sidebar-accent: 160 25% 90%;
+    --sidebar-accent-foreground: 220 13% 20%;
+    --sidebar-border: 160 15% 88%;
+    --sidebar-ring: 160 84% 39%;
 
-    --shadow-soft: 0 4px 20px -4px hsl(220 30% 18% / 0.08);
-    --shadow-card: 0 2px 12px -2px hsl(220 30% 18% / 0.06);
-    --gradient-hero: linear-gradient(135deg, hsl(152 45% 42% / 0.08), hsl(207 55% 55% / 0.08));
-    --gradient-warm: linear-gradient(135deg, hsl(25 85% 65% / 0.1), hsl(152 45% 42% / 0.1));
+    --shadow-soft: 0 4px 20px -4px hsl(220 13% 20% / 0.08);
+    --shadow-card: 0 2px 12px -2px hsl(220 13% 20% / 0.06);
+    --gradient-hero: linear-gradient(135deg, hsl(160 84% 39% / 1), hsl(200 80% 45% / 1));
+    --gradient-warm: linear-gradient(135deg, hsl(160 84% 45% / 0.15), hsl(200 80% 50% / 0.15));
   }
 
   .dark {
