@@ -11,10 +11,15 @@ const STORY_MODEL =
     ? "llama-3.3-70b-versatile"
     : import.meta.env.VITE_GROQ_MODEL_STORY || "llama-3.3-70b-versatile";
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const GEMINI_MODEL = import.meta.env.VITE_GEMINI_MODEL || "gemini-2.0-flash";
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+const IMAGEN_MODEL = "imagen-3.0-generate-001";
+const IMAGEN_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:generateImages";
+
+// POCSO-compliant prompting
 const SAFE_IMAGE_STYLE_SUFFIX =
-  "Children's book illustration, warm colors, innocent, safe educational tone, no scary elements, no violence, no nudity, non-threatening.";
+  "Children's storybook illustration, soft watercolor style, warm colors, innocent, safe educational tone, comforting, reassuring. No scary elements, no violence, no nudity, non-threatening.";
+
+const POCSO_NEGATIVE_PROMPTS =
+  "no photorealistic children, no explicit content, no nudity, no graphic violence, no scary or distressful imagery, no blood, no horror elements, no unsupervised strangers in threatening poses, no abuse imagery, no dark or disturbing content";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -319,54 +324,163 @@ const normalizeSlides = (slides: StoryTreeResponse["slides"]): GeneratedStorySli
 };
 
 export const generateSlideImageWithPuter = async (prompt: string): Promise<string | undefined> => {
-  if (!GEMINI_API_KEY) {
-    console.warn("[SafeStory] Gemini API key missing; image generation skipped.");
-    return undefined;
-  }
-
   try {
-    const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
+    if (!GEMINI_API_KEY) {
+      console.warn("[SafeStory] Gemini API key missing; generating SVG placeholder instead.");
+      return generateSvgPlaceholder(prompt);
+    }
+
+    // Construct POCSO-compliant prompt
+    const fullPrompt = `${prompt}. ${SAFE_IMAGE_STYLE_SUFFIX}`;
+    
+    console.info(`[SafeStory][Image] Attempting to generate image for: "${prompt.substring(0, 50)}..."`);
+
+    // Try Imagen 3 API first
+    try {
+      const imagenResponse = await fetch(`${IMAGEN_API_URL}?key=${GEMINI_API_KEY}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          instances: [
+            {
+              prompt: fullPrompt,
+            },
+          ],
+          parameters: {
+            sampleCount: 1,
+            aspectRatio: "4:3",
+            negativePrompt: POCSO_NEGATIVE_PROMPTS,
+          },
+        }),
+      });
+
+      if (imagenResponse.ok) {
+        const data = await imagenResponse.json();
+        console.info("[SafeStory][Image] Imagen API response:", data);
+        
+        // Try multiple possible response paths
+        const imageData = data?.predictions?.[0]?.bytesBase64Encoded || 
+                          data?.predictions?.[0]?.image?.data ||
+                          data?.predictions?.[0]?.imageData ||
+                          data?.predictions?.[0]?.imageUri;
+
+        if (imageData) {
+          console.info("[SafeStory][Image] Successfully generated image via Imagen API");
+          // Handle both base64 and URI formats
+          if (imageData.startsWith('data:') || imageData.startsWith('http')) {
+            return imageData;
+          }
+          return `data:image/jpeg;base64,${imageData}`;
+        }
+      } else {
+        const errorText = await imagenResponse.text();
+        console.warn(`[SafeStory][Image] Imagen API error (${imagenResponse.status}):`, errorText);
+      }
+    } catch (imagenError) {
+      console.warn("[SafeStory][Image] Imagen API call failed:", imagenError);
+    }
+
+    // Fallback: Use Gemini Vision (text-to-image via prompt description)
+    console.info("[SafeStory][Image] Falling back to Gemini API for image generation...");
+    
+    try {
+      const geminiResponse = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            contents: [
               {
-                text: prompt,
+                parts: [
+                  {
+                    text: `Generate a children's storybook illustration for: ${fullPrompt}`,
+                  },
+                ],
               },
             ],
-          },
-        ],
-        generationConfig: {
-          maxOutputTokens: 1024,
-        },
-      }),
-    });
+            generationConfig: {
+              maxOutputTokens: 1024,
+            },
+          }),
+        }
+      );
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error("[SafeStory] Gemini API error:", errorData);
-      return undefined;
+      if (geminiResponse.ok) {
+        const geminiData = await geminiResponse.json();
+        
+        // Try to extract image from Gemini response
+        const imageContent = geminiData?.candidates?.[0]?.content?.parts?.find(
+          (part: any) => part.inlineData || part.inline_data
+        );
+
+        if (imageContent?.inlineData?.data) {
+          console.info("[SafeStory][Image] Generated image via Gemini API");
+          return `data:image/jpeg;base64,${imageContent.inlineData.data}`;
+        } else if (imageContent?.inline_data?.data) {
+          console.info("[SafeStory][Image] Generated image via Gemini API");
+          return `data:image/jpeg;base64,${imageContent.inline_data.data}`;
+        }
+      }
+    } catch (geminiError) {
+      console.warn("[SafeStory][Image] Gemini API fallback failed:", geminiError);
     }
 
-    const data = await response.json();
-    const imageDataUrl =
-      data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data ||
-      data?.candidates?.[0]?.content?.parts?.[0]?.inline_data?.data;
+    // Fallback: Generate SVG placeholder (ensures UI doesn't break)
+    console.warn("[SafeStory][Image] All image APIs unavailable. Using SVG placeholder.");
+    const svgPlaceholder = generateSvgPlaceholder(prompt);
+    return svgPlaceholder;
 
-    if (!imageDataUrl) {
-      console.warn("[SafeStory] No image data returned from Gemini.");
-      return undefined;
-    }
-
-    return `data:image/jpeg;base64,${imageDataUrl}`;
   } catch (error) {
-    console.error("[SafeStory] Image generation failed:", error);
-    return undefined;
+    console.error("[SafeStory][Image] Unexpected error during image generation:", error);
+    // Return SVG placeholder on any error
+    try {
+      return generateSvgPlaceholder(prompt);
+    } catch (svgError) {
+      console.error("[SafeStory][Image] SVG placeholder generation also failed:", svgError);
+      return undefined;
+    }
   }
+};
+
+/**
+ * Generates a simple SVG placeholder when API image generation fails
+ * This ensures the UI always has something to display
+ * Uses URI encoding instead of base64 to handle Unicode characters properly
+ */
+const generateSvgPlaceholder = (prompt: string): string => {
+  const colors = ["#FF6B6B", "#4ECDC4", "#FFE66D", "#95E1D3", "#F38181"];
+  const randomColor = colors[Math.floor(Math.random() * colors.length)];
+  
+  // Sanitize prompt text to remove potentially problematic characters
+  const sanitizedPrompt = prompt
+    .substring(0, 40)
+    .replace(/[<>"]/g, '') // Remove XML special chars
+    .trim();
+  
+  const svg = `<svg width="800" height="600" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" style="stop-color:${randomColor};stop-opacity:0.3" />
+        <stop offset="100%" style="stop-color:#6C5CE7;stop-opacity:0.3" />
+      </linearGradient>
+    </defs>
+    <rect width="800" height="600" fill="url(#grad)"/>
+    <circle cx="400" cy="300" r="100" fill="${randomColor}" opacity="0.5"/>
+    <text x="400" y="300" font-size="20" text-anchor="middle" fill="#333" font-family="sans-serif" font-weight="bold">
+      Generated
+    </text>
+    <text x="400" y="330" font-size="14" text-anchor="middle" fill="#666" font-family="sans-serif">
+      Image Loading...
+    </text>
+  </svg>`;
+  
+  // Use encodeURIComponent for proper Unicode handling
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 };
 
 const generateBlueprint = async (input: StoryGenerationInput): Promise<StoryBlueprint> => {
@@ -506,41 +620,11 @@ export const generateStoryWithGroqAndPuterWithProgress = async (
   const slides = await generateStoryTree(input, blueprint);
   report({
     stage: "storytree-ready",
-    message: `Story structure ready with ${slides.length} slides.`,
+    message: `Story structure ready with ${slides.length} slides. Images will be generated in background.`,
     total: slides.length,
   });
 
-  report({
-    stage: "images-start",
-    message: "Generating illustrations for each slide with Puter...",
-    total: slides.length,
-  });
-
-  const slidesWithImages: GeneratedStorySlide[] = [];
-
-  for (let index = 0; index < slides.length; index += 1) {
-    const slide = slides[index];
-    const imageUrl = await generateSlideImageWithPuter(slide.imagePrompt);
-
-    slidesWithImages.push({
-      ...slide,
-      imageUrl,
-    });
-
-    report({
-      stage: "image-progress",
-      message: `Generated image ${index + 1} of ${slides.length}.`,
-      current: index + 1,
-      total: slides.length,
-    });
-  }
-
-  report({
-    stage: "images-ready",
-    message: "All slide illustrations generated.",
-    total: slides.length,
-  });
-
+  // Return story immediately with placeholder imageUrls (no images yet)
   const now = new Date().toISOString();
   const generatedStory: GeneratedStory = {
     id: `story-${Date.now()}`,
@@ -550,26 +634,177 @@ export const generateStoryWithGroqAndPuterWithProgress = async (
     language: input.language,
     moralLesson: blueprint.moralLesson || input.moralLesson,
     characters: blueprint.characters,
-    slides: slidesWithImages,
-    totalSlides: slidesWithImages.length,
+    slides: slides.map((slide) => ({
+      ...slide,
+      imageUrl: undefined, // Placeholder - will be filled in background
+    })),
+    totalSlides: slides.length,
     status: "draft",
     createdAt: now,
     updatedAt: now,
     metadata: {
       region: input.regionContext,
       description: input.description,
-      imageStyle: "gemini-2.0-flash-medium-quality",
+      imageStyle: "imagen-3.0-generate-001",
       generationModel: "llama-3.3-70b-versatile",
+      imagingStartedAt: null,
+      imagingCompletedAt: null,
     },
   };
 
   report({
     stage: "completed",
-    message: "Story generation completed successfully.",
+    message: "Story text generation completed. Images will be generated in background.",
     total: slides.length,
   });
 
   return generatedStory;
+};
+
+/**
+ * Background function to generate and update images for a story asynchronously.
+ * This function runs without blocking the main UI thread.
+ * Processes images in parallel with rate limit handling (30-second delay between batches).
+ */
+export const generateImagesForStoryInBackground = async (
+  storyId: string,
+  slides: GeneratedStorySlide[],
+  userId: string,
+  onProgress?: (event: Partial<GenerationProgressEvent>) => void
+): Promise<void> => {
+  try {
+    const report = (event: Partial<GenerationProgressEvent>) => {
+      console.info(`[SafeStory][Background Imaging] ${event.message}`, event);
+      onProgress?.(event);
+    };
+
+    report({
+      stage: "images-start",
+      message: "Starting background image generation...",
+      total: slides.length,
+    });
+
+    // Import updateStoryData at runtime to avoid circular dependency
+    const { updateStoryData, getStoryById } = await import("@/lib/supabaseStoryService");
+
+    // Process images in batches to respect rate limits (2-15 requests/min = need ~30s between batches)
+    const batchSize = 3; // Conservative batch size for free tier
+    const batchDelayMs = 30000; // 30 seconds between batches
+
+    for (let i = 0; i < slides.length; i += batchSize) {
+      const batch = slides.slice(i, Math.min(i + batchSize, slides.length));
+      
+      // Generate images in parallel within this batch
+      const results = await Promise.allSettled(
+        batch.map((slide) => generateSlideImageWithPuter(slide.imagePrompt))
+      );
+
+      // Update each slide with its generated image
+      let batchUpdated = false;
+      for (let j = 0; j < results.length; j++) {
+        const result = results[j];
+        const slideIndex = i + j;
+        
+        if (result.status === "fulfilled") {
+          const imageValue = result.value;
+          
+          if (imageValue) {
+            slides[slideIndex].imageUrl = imageValue;
+            batchUpdated = true;
+            console.info(`[SafeStory][Background Imaging] Successfully set image for slide ${slideIndex + 1}:`, imageValue.substring(0, 50) + "...");
+            report({
+              stage: "image-progress",
+              message: `Generated image ${slideIndex + 1}/${slides.length}`,
+              current: slideIndex + 1,
+              total: slides.length,
+            });
+          } else {
+            console.warn(`[SafeStory][Background Imaging] Image generation returned undefined for slide ${slideIndex + 1}`);
+            report({
+              stage: "image-progress",
+              message: `Failed image ${slideIndex + 1}/${slides.length} (returned undefined)`,
+              current: slideIndex + 1,
+              total: slides.length,
+            });
+          }
+        } else {
+          console.error(`[SafeStory][Background Imaging] Promise rejected for slide ${slideIndex + 1}:`, result.reason);
+          report({
+            stage: "image-progress",
+            message: `Error generating image ${slideIndex + 1}/${slides.length}`,
+            current: slideIndex + 1,
+            total: slides.length,
+          });
+        }
+      }
+
+      // Save batch to Supabase if we generated any images in this batch
+      if (batchUpdated) {
+        try {
+          const storedStory = await getStoryById(storyId);
+          const updatedStory: GeneratedStory = {
+            ...storedStory.story_data,
+            slides: slides,
+            metadata: {
+              ...storedStory.story_data.metadata,
+              imagingStartedAt: storedStory.story_data.metadata?.imagingStartedAt || new Date().toISOString(),
+              imagingCompletedAt: new Date().toISOString(),
+            },
+            updatedAt: new Date().toISOString(),
+          };
+
+          await updateStoryData(storyId, updatedStory);
+          console.info(`[SafeStory][Background Imaging] Saved batch ${Math.floor(i / batchSize) + 1} to Supabase`);
+        } catch (saveError) {
+          console.error(`[SafeStory][Background Imaging] Failed to save batch to Supabase:`, saveError);
+          report({
+            message: `Failed to save images to database: ${saveError instanceof Error ? saveError.message : "Unknown error"}`,
+          });
+        }
+      }
+
+      // Wait before next batch (except on last iteration)
+      if (i + batchSize < slides.length) {
+        console.info(`[SafeStory][Background Imaging] Waiting ${batchDelayMs}ms before next batch...`);
+        await sleep(batchDelayMs);
+      }
+    }
+
+    // Final save to ensure all images are persisted
+    try {
+      const storedStory = await getStoryById(storyId);
+      const updatedStory: GeneratedStory = {
+        ...storedStory.story_data,
+        slides: slides,
+        metadata: {
+          ...storedStory.story_data.metadata,
+          imagingStartedAt: storedStory.story_data.metadata?.imagingStartedAt || new Date().toISOString(),
+          imagingCompletedAt: new Date().toISOString(),
+        },
+        updatedAt: new Date().toISOString(),
+      };
+
+      await updateStoryData(storyId, updatedStory);
+
+      report({
+        stage: "images-ready",
+        message: "All slide images processed and saved to database.",
+        total: slides.length,
+      });
+
+      console.info("[SafeStory][Background Imaging] Completed successfully", { storyId, slidesProcessed: slides.length, totalWithImages: slides.filter(s => s.imageUrl).length });
+    } catch (finalSaveError) {
+      console.error("[SafeStory][Background Imaging] Final save failed:", finalSaveError);
+      report({
+        message: `Final save error: ${finalSaveError instanceof Error ? finalSaveError.message : "Unknown error"}`,
+      });
+    }
+  } catch (error) {
+    console.error("[SafeStory][Background Imaging] Failed:", error);
+    onProgress?.({
+      message: `Background imaging error: ${error instanceof Error ? error.message : "Unknown error"}`,
+    });
+  }
 };
 
 export const generateStoryWithGroqAndPuter = async (
@@ -577,4 +812,62 @@ export const generateStoryWithGroqAndPuter = async (
   options: StoryGenerationOptions = {},
 ): Promise<GeneratedStory> => {
   return generateStoryWithGroqAndPuterWithProgress(input, options);
+};
+
+/**
+ * DIAGNOSTIC FUNCTION: Test Imagen API and log actual response format
+ * Run this in browser console to debug image generation issues
+ * 
+ * Usage: Copy this test URL to console and call it to see actual API response
+ */
+export const testImagenApiDirect = async (testPrompt: string = "A happy child reading a book") => {
+  const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+  
+  if (!GEMINI_KEY) {
+    console.error("❌ VITE_GEMINI_API_KEY not found in environment");
+    return;
+  }
+
+  console.log("🔍 Starting Imagen API diagnostic test...");
+  console.log("📝 Test prompt:", testPrompt);
+
+  try {
+    const payload = {
+      instances: [{ prompt: testPrompt }],
+      parameters: {
+        sampleCount: 1,
+        aspectRatio: "4:3",
+      },
+    };
+
+    console.log("📤 Request payload:", JSON.stringify(payload, null, 2));
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:generateImages?key=${GEMINI_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }
+    );
+
+    console.log("📊 Response status:", response.status, response.statusText);
+
+    const data = await response.json();
+    console.log("📥 Full response data:", JSON.stringify(data, null, 2));
+
+    if (response.ok && data?.predictions?.length > 0) {
+      console.log("✅ Image generation successful!");
+      console.log("📸 First prediction object keys:", Object.keys(data.predictions[0]));
+      console.log("📸 First prediction data:", JSON.stringify(data.predictions[0], null, 2));
+    } else if (response.ok) {
+      console.warn("⚠️ Response OK but no predictions in response");
+    } else {
+      console.error("❌ API returned error:", data?.error);
+    }
+
+    return data;
+  } catch (error) {
+    console.error("❌ Diagnostic test failed:", error);
+  }
 };

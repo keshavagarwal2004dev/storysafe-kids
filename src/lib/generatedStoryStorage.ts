@@ -38,5 +38,7 @@ export interface GeneratedStory {
     description?: string;
     imageStyle?: string;
     generationModel?: string;
+    imagingStartedAt?: string | null;
+    imagingCompletedAt?: string | null;
   };
 }

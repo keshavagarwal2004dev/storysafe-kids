@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent } from "@/components/ui/card";
 import { topics, ageGroups, languages } from "@/data/mockData";
 import { useToast } from "@/hooks/use-toast";
-import { GenerationProgressEvent, generateStoryWithGroqAndPuter, CharacterInput } from "@/lib/groqStoryGenerator";
+import { GenerationProgressEvent, generateStoryWithGroqAndPuter, generateImagesForStoryInBackground, CharacterInput } from "@/lib/groqStoryGenerator";
 import { useAuth } from "@/contexts/AuthContext";
 import { saveStoryToSupabase } from "@/lib/supabaseStoryService";
 
@@ -17,8 +17,8 @@ const generationSteps = [
   "Preparing request",
   "Creating story blueprint JSON",
   "Generating branching story structure",
-  "Generating slide images",
-  "Finalizing story for NGO editor",
+  "Completing and saving to database",
+  "Generating images (background job)",
 ] as const;
 
 const getStepIndex = (event: GenerationProgressEvent): number => {
@@ -34,9 +34,9 @@ const getStepIndex = (event: GenerationProgressEvent): number => {
     case "images-start":
     case "image-progress":
     case "images-ready":
-      return 3;
-    case "completed":
       return 4;
+    case "completed":
+      return 3;
     default:
       return 0;
   }
@@ -159,14 +159,23 @@ const CreateStory = () => {
       );
       console.info("[SafeStory][NGO] Story saved to Supabase:", supabaseStory.id);
 
-      console.info("[SafeStory][NGO] Generation completed and story saved for editor.", {
-        slides: generated.slides.length,
-        title: generated.title,
+      // Navigate immediately to editor (text generation is done)
+      toast({
+        title: "Story generated!",
+        description: "Opening editor. Images are being generated in the background.",
       });
 
-      toast({
-        title: "Story generated",
-        description: `Generated ${generated.slides.length} slides with branching choices.`,
+      // Start background image generation (fire and forget)
+      console.info("[SafeStory][NGO] Starting background image generation...");
+      generateImagesForStoryInBackground(
+        supabaseStory.id,
+        generated.slides,
+        user.id,
+        (event) => {
+          console.info("[SafeStory][Background] Image generation progress:", event);
+        }
+      ).catch((error) => {
+        console.error("[SafeStory][Background] Image generation failed:", error);
       });
 
       navigate(`/ngo/story-editor/${supabaseStory.id}`);

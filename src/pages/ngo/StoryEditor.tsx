@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Pencil, RefreshCw, Check, Save } from "lucid
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
 import { sampleStorySlides } from "@/data/mockData";
 import { useToast } from "@/hooks/use-toast";
 import { GeneratedStorySlide } from "@/lib/generatedStoryStorage";
@@ -117,6 +118,23 @@ const StoryEditor = () => {
     };
     
     loadStory();
+
+    // Poll for image updates every 10 seconds
+    // This allows the editor to show newly generated images without manual refresh
+    const pollInterval = setInterval(async () => {
+      if (!id) return;
+      
+      try {
+        const story = await getStoryById(id);
+        if (story?.story_data?.slides) {
+          setSlides(story.story_data.slides);
+        }
+      } catch (error) {
+        console.warn("[SafeStory] Polling for image updates failed:", error);
+      }
+    }, 10000); // Poll every 10 seconds
+
+    return () => clearInterval(pollInterval);
   }, [id, navigate, toast]);
 
   const handleSaveDraft = async () => {
@@ -235,8 +253,37 @@ const StoryEditor = () => {
                   className="w-full max-w-xl rounded-2xl mb-6 shadow-card object-cover"
                 />
               ) : (
-                <div className="text-6xl mb-6">
-                  {["🏞️", "🍬", "🤔", "🌟", "💡", "🛡️", "👩‍🏫", "🚸", "💬", "✅"][currentSlide] || "📖"}
+                <div className="w-full max-w-xl mb-6 space-y-4">
+                  <div className="flex flex-col items-center justify-center text-muted-foreground space-y-2">
+                    <div className="text-sm font-medium">
+                      ⏳ Image generating in background...
+                    </div>
+                    <div className="text-xs text-muted-foreground/70">
+                      This may take 30-60 seconds
+                    </div>
+                  </div>
+                  <Skeleton className="w-full aspect-[4/3] rounded-2xl" />
+                  <div className="flex gap-2 justify-center">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={regenerateCurrentImage}
+                      disabled={isRegeneratingImage}
+                      className="text-xs"
+                    >
+                      {isRegeneratingImage ? (
+                        <>
+                          <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="h-3 w-3 mr-1" />
+                          Retry Image
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
               )}
               <p className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
